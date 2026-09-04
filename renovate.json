@@ -12,14 +12,45 @@
   "prConcurrentLimit": 0,
   "prHourlyLimit": 0,
   "labels": [
-    "dependencies"
+    "dependencies",
+    "renovate"
   ],
+  "commitMessagePrefix": "renovate:",
   "lockFileMaintenance": {
     "enabled": true,
     "schedule": [
       "before 6am on monday"
     ]
   },
+  "osvVulnerabilityAlerts": true,
+  "vulnerabilityAlerts": {
+    "labels": [
+      "security"
+    ],
+    "schedule": [
+      "at any time"
+    ]
+  },
+  "kubernetes": {
+    "managerFilePatterns": [
+      "/kubernetes/.+\\.ya?ml$/"
+    ]
+  },
+  "customManagers": [
+    {
+      "description": "kubeadm/kubelet/kubectl versies in install_kubernetes.sh",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^install_kubernetes\\.sh$/"
+      ],
+      "matchStrings": [
+        "(?:kubeadm|kubelet|kubectl)=(?<currentValue>\\d+\\.\\d+\\.\\d+)-"
+      ],
+      "depNameTemplate": "kubernetes/kubernetes",
+      "datasourceTemplate": "github-releases",
+      "extractVersionTemplate": "^v(?<version>.*)$"
+    }
+  ],
   "packageRules": [
     {
       "description": "Pin container images en actions op digest (supply-chain hardening)",
@@ -39,14 +70,17 @@
         "digest"
       ],
       "groupName": "non-major dependencies"
+    },
+    {
+      "description": "Kubernetes-versie in install_kubernetes.sh: geen major/minor sprong zonder review",
+      "matchDepNames": [
+        "kubernetes/kubernetes"
+      ],
+      "matchUpdateTypes": [
+        "major",
+        "minor"
+      ],
+      "dependencyDashboardApproval": true
     }
-  ],
-  "vulnerabilityAlerts": {
-    "labels": [
-      "security"
-    ],
-    "schedule": [
-      "at any time"
-    ]
-  }
+  ]
 }

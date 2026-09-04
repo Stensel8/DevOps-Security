@@ -1,10 +1,13 @@
 # Dependabot version updates
-# Docs: https://docs.github.com/code-security/dependabot/dependabot-version-updates
+# Draait naast Renovate (renovate.json). Dependabot is hier het vangnet:
+# het dekt de standaard-ecosystems. Renovate doet daarnaast digest-pinning,
+# de Kubernetes-manifests en de versies in install_kubernetes.sh.
 version: 2
 
 updates:
   # ---------------------------------------------------------------
   # Python (Poetry) - pyproject.toml + poetry.lock staan in /content
+  # LET OP: het ecosystem heet "pip", niet "python". Poetry valt eronder.
   # ---------------------------------------------------------------
   - package-ecosystem: "pip"
     directory: "/content"
@@ -30,12 +33,10 @@ updates:
           - "patch"
 
   # ---------------------------------------------------------------
-  # Docker base images - Dockerfile in root, manifests in /kubernetes
+  # Docker base images - Dockerfile in root
   # ---------------------------------------------------------------
   - package-ecosystem: "docker"
-    directories:
-      - "/"
-      - "/kubernetes"
+    directory: "/"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -47,13 +48,23 @@ updates:
       - "docker"
     commit-message:
       prefix: "docker"
-    groups:
-      docker-minor-patch:
-        patterns:
-          - "*"
-        update-types:
-          - "minor"
-          - "patch"
+
+  # ---------------------------------------------------------------
+  # Docker images in de Kubernetes-manifests
+  # ---------------------------------------------------------------
+  - package-ecosystem: "docker"
+    directory: "/kubernetes"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Europe/Amsterdam"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "kubernetes"
+    commit-message:
+      prefix: "docker"
 
   # ---------------------------------------------------------------
   # GitHub Actions - .github/workflows (altijd directory "/")
