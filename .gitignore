@@ -1,0 +1,9 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# Runtime output van de applicatie
+content/access.log
+
+# macOS
+.DS_Store
