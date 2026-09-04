@@ -1,0 +1,104 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    ":dependencyDashboard",
+    ":semanticCommits"
+  ],
+  "forkProcessing": "enabled",
+  "timezone": "Europe/Amsterdam",
+  "schedule": [
+    "before 6am on monday"
+  ],
+  "prConcurrentLimit": 0,
+  "prHourlyLimit": 0,
+  "labels": [
+    "dependencies",
+    "renovate"
+  ],
+  "commitMessagePrefix": "renovate:",
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": [
+      "before 6am on monday"
+    ]
+  },
+  "osvVulnerabilityAlerts": true,
+  "vulnerabilityAlerts": {
+    "labels": [
+      "security"
+    ],
+    "schedule": [
+      "at any time"
+    ]
+  },
+  "kubernetes": {
+    "managerFilePatterns": [
+      "/kubernetes/.+\\.ya?ml$/"
+    ]
+  },
+  "customManagers": [
+    {
+      "description": "kubeadm/kubelet/kubectl versies in install_kubernetes.sh",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^install_kubernetes\\.sh$/"
+      ],
+      "matchStrings": [
+        "(?:kubeadm|kubelet|kubectl)=(?<currentValue>\\d+\\.\\d+\\.\\d+)-"
+      ],
+      "depNameTemplate": "kubernetes/kubernetes",
+      "datasourceTemplate": "github-releases",
+      "extractVersionTemplate": "^v(?<version>.*)$"
+    },
+    {
+      "description": "Kubernetes apt-repository URL (pkgs.k8s.io) in install_kubernetes.sh",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^install_kubernetes\\.sh$/"
+      ],
+      "matchStrings": [
+        "pkgs\\.k8s\\.io/core:/stable:/v(?<currentValue>\\d+\\.\\d+)/"
+      ],
+      "depNameTemplate": "kubernetes-apt-repo",
+      "packageNameTemplate": "kubernetes/kubernetes",
+      "datasourceTemplate": "github-releases",
+      "extractVersionTemplate": "^v(?<version>\\d+\\.\\d+)",
+      "versioningTemplate": "loose"
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "Pin container images en actions op digest (supply-chain hardening)",
+      "matchManagers": [
+        "dockerfile",
+        "docker-compose",
+        "github-actions",
+        "kubernetes"
+      ],
+      "pinDigests": true
+    },
+    {
+      "description": "Non-major updates gebundeld in 1 PR; majors blijven apart",
+      "matchUpdateTypes": [
+        "minor",
+        "patch",
+        "digest"
+      ],
+      "groupName": "non-major dependencies"
+    },
+    {
+      "description": "Pakketversies en apt-repo-URL in install_kubernetes.sh bewegen samen in 1 PR; minor/major pas na akkoord op het dashboard",
+      "matchDepNames": [
+        "kubernetes/kubernetes",
+        "kubernetes-apt-repo"
+      ],
+      "matchUpdateTypes": [
+        "major",
+        "minor"
+      ],
+      "dependencyDashboardApproval": true,
+      "groupName": "kubernetes toolchain"
+    }
+  ]
+}

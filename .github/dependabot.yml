@@ -1,0 +1,88 @@
+# Dependabot version updates
+# Draait naast Renovate (renovate.json). Dependabot is hier het vangnet:
+# het dekt de standaard-ecosystems. Renovate doet daarnaast digest-pinning,
+# de Kubernetes-manifests en de versies in install_kubernetes.sh.
+version: 2
+
+updates:
+  # ---------------------------------------------------------------
+  # Python (Poetry) - pyproject.toml + poetry.lock staan in /content
+  # LET OP: het ecosystem heet "pip", niet "python". Poetry valt eronder.
+  # ---------------------------------------------------------------
+  - package-ecosystem: "pip"
+    directory: "/content"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Europe/Amsterdam"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "python"
+    commit-message:
+      prefix: "pip"
+      include: "scope"
+    groups:
+      # Minor + patch samen in 1 PR; majors blijven losse PR's
+      python-minor-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+
+  # ---------------------------------------------------------------
+  # Docker base images - Dockerfile in root
+  # ---------------------------------------------------------------
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Europe/Amsterdam"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "docker"
+    commit-message:
+      prefix: "docker"
+
+  # ---------------------------------------------------------------
+  # Docker images in de Kubernetes-manifests
+  # ---------------------------------------------------------------
+  - package-ecosystem: "docker"
+    directory: "/kubernetes"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Europe/Amsterdam"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "kubernetes"
+    commit-message:
+      prefix: "docker"
+
+  # ---------------------------------------------------------------
+  # GitHub Actions - .github/workflows (altijd directory "/")
+  # ---------------------------------------------------------------
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Europe/Amsterdam"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "github-actions"
+    commit-message:
+      prefix: "ci"
+    groups:
+      github-actions:
+        patterns:
+          - "*"
