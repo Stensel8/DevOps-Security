@@ -5,6 +5,7 @@
     ":dependencyDashboard",
     ":semanticCommits"
   ],
+  "forkProcessing": "enabled",
   "timezone": "Europe/Amsterdam",
   "schedule": [
     "before 6am on monday"
@@ -49,6 +50,21 @@
       "depNameTemplate": "kubernetes/kubernetes",
       "datasourceTemplate": "github-releases",
       "extractVersionTemplate": "^v(?<version>.*)$"
+    },
+    {
+      "description": "Kubernetes apt-repository URL (pkgs.k8s.io) in install_kubernetes.sh",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^install_kubernetes\\.sh$/"
+      ],
+      "matchStrings": [
+        "pkgs\\.k8s\\.io/core:/stable:/v(?<currentValue>\\d+\\.\\d+)/"
+      ],
+      "depNameTemplate": "kubernetes-apt-repo",
+      "packageNameTemplate": "kubernetes/kubernetes",
+      "datasourceTemplate": "github-releases",
+      "extractVersionTemplate": "^v(?<version>\\d+\\.\\d+)",
+      "versioningTemplate": "loose"
     }
   ],
   "packageRules": [
@@ -72,15 +88,17 @@
       "groupName": "non-major dependencies"
     },
     {
-      "description": "Kubernetes-versie in install_kubernetes.sh: geen major/minor sprong zonder review",
+      "description": "Pakketversies en apt-repo-URL in install_kubernetes.sh bewegen samen in 1 PR; minor/major pas na akkoord op het dashboard",
       "matchDepNames": [
-        "kubernetes/kubernetes"
+        "kubernetes/kubernetes",
+        "kubernetes-apt-repo"
       ],
       "matchUpdateTypes": [
         "major",
         "minor"
       ],
-      "dependencyDashboardApproval": true
+      "dependencyDashboardApproval": true,
+      "groupName": "kubernetes toolchain"
     }
   ]
 }
