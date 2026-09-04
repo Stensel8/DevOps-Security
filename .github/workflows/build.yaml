@@ -2,6 +2,11 @@ name: CI/CD
 
 on: push
 
+# Least privilege: geen enkele job schrijft naar de repo of het package
+# registry via GITHUB_TOKEN. Docker Hub gebruikt eigen secrets.
+permissions:
+  contents: read
+
 jobs:
   
   build:
