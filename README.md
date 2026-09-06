@@ -1,2 +1,2 @@
 # DevOps Security
-This repository is intended for a school-demo application.
+Demo application. This is used for Kubernetes / Vulnerability explanation.
