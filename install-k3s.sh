@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
 #
-# Kubernetes "light" Installer Script (K3s)
+# K3s Installer Script (single-binary Kubernetes)
 #
-# Installs K3s, the single-binary Kubernetes distribution used in the
+# Installs K3s, the lightweight Kubernetes distribution used in the
 # DevSecOps module handleiding. Run as root on each node.
 #
-#   Master  (CN1):  ./install-k8s-light.sh server
+#   Master  (CN1):  ./install-k3s.sh server
 #   Worker  (CN2):  K3S_URL=https://<master-ip>:6443 K3S_TOKEN=<token> \
-#                       ./install-k8s-light.sh agent
+#                       ./install-k3s.sh agent
 #
 # After a server install the summary prints the node token and the exact
 # agent command to run on the workers.
 #
-# See install-k8s-full.sh for the kubeadm + containerd alternative.
+# See install-kubeadm.sh for the kubeadm + containerd alternative.
 #
 
 set -euo pipefail
@@ -101,7 +101,7 @@ Invoke-Cmd() {
 }
 
 # === Settings ===
-LOG_FILE="/tmp/k8s_light_install_$(date +%Y%m%d_%H%M%S).log"
+LOG_FILE="/tmp/k3s_install_$(date +%Y%m%d_%H%M%S).log"
 
 ROLE="${1:-server}"                       # server (master) | agent (worker)
 K3S_URL="${K3S_URL:-}"                    # agent only: https://<master-ip>:6443
@@ -168,7 +168,7 @@ echo ""
 if [[ "$ROLE" == "server" ]]; then
     echo -e "${BOLD}Join a worker (run on CN2)${NC}"
     echo -e "  K3S_URL=https://${NODE_IP}:6443 K3S_TOKEN=${NODE_TOKEN} \\"
-    echo -e "      ./install-k8s-light.sh agent"
+    echo -e "      ./install-k3s.sh agent"
     echo ""
     echo -e "${BOLD}Use kubectl${NC}"
     echo -e "  export KUBECONFIG=/etc/rancher/k3s/k3s.yaml   # or: k3s kubectl ..."
