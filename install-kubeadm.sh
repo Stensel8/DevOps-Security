@@ -8,7 +8,7 @@
 # Does NOT run "kubeadm init" / "kubeadm join" - the summary prints the
 # commands to run next. Run as root.
 #
-# See install-k3s.sh for the K3s single-binary alternative.
+# See install-k3s-master.sh / install-k3s-worker.sh for the K3s alternative.
 #
 
 set -euo pipefail
@@ -112,7 +112,7 @@ Test-Root
 DISTRO=$(Get-OsId)
 case "$DISTRO" in
     ubuntu|debian) : ;;
-    *) Stop-Script "This script targets Ubuntu/Debian. Detected: ${DISTRO}. Use install-k3s.sh instead." ;;
+    *) Stop-Script "This script targets Ubuntu/Debian. Detected: ${DISTRO}. Use the install-k3s-*.sh scripts instead." ;;
 esac
 Write-Log INFO "Detected distribution: ${DISTRO}"
 
