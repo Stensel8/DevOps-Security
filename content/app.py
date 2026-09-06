@@ -18,10 +18,9 @@ db.row_factory = sqlite3.Row
 log_file = open('access.log', 'a', buffering=1)
 @app.before_request
 def log_request():
-    # ⚠️ OPZETTELIJK KWETSBAAR (Demo): Gevoelige gegevens in logbestanden
-    # Alle formuliergegevens (inclusief wachtwoorden van /signin POST-verzoeken) worden naar access.log geschreven.
-    # Iedereen met bestandssysteemtoegang kan wachtwoorden in logbestanden lezen.
-    # In productie: NOOIT gevoelige gegevens loggen, en minstens gevoelige velden uitsluiten.
+    # OPZETTELIJK KWETSBAAR (Demo): We loggen alles, inclusief wachtwoorden
+    # Dit is slecht. Als iemand toegang tot de logbestanden heeft, kunnen ze alle
+    # wachtwoorden van ingelogde gebruikers zien. In echte applicaties: nooit doen!
     log_file.write(f"{request.method} {request.path} {dict(request.form) if request.form else ''}\n")
 
 
@@ -44,10 +43,9 @@ def index():
 # The quote comments page
 @app.route("/quotes/<int:quote_id>")
 def get_comments_page(quote_id):
-    # ⚠️ OPZETTELIJK KWETSBAAR (Demo): SQL Injection via Path Parameters
-    # Gebruikersinvoer (quote_id) wordt rechtstreeks in SQL-query's geïnterpoleerd zonder parameterisatie.
-    # Een aanvaller kan een URL als /quotes/1 UNION SELECT ... gebruiken om willekeurige gegevens uit te pakken.
-    # In productie: Gebruik voorbereid SQL of parameterized queries (db.execute(query, [param])).
+    # OPZETTELIJK KWETSBAAR (Demo): SQL Injection
+    # De quote_id gaat rechtstreeks in de SQL query. Een aanvaller kan iets als
+    # /quotes/1 UNION SELECT ... gebruiken en zomaar alle data stelen.
     quote = db.execute(f"select id, text, attribution from quotes where id={quote_id}").fetchone()
     comments = db.execute(f"select text, datetime(time,'localtime') as time, name as user_name from comments c left join users u on u.id=c.user_id where quote_id={quote_id} order by c.id").fetchall()
     return templates.comments_page(quote, comments, request.user_id)
@@ -56,11 +54,9 @@ def get_comments_page(quote_id):
 # Post a new quote
 @app.route("/quotes", methods=["POST"])
 def post_quote():
-    # ⚠️ OPZETTELIJK KWETSBAAR (Demo): SQL Injection via POST Body
-    # Gebruikersinvoer uit request.form wordt rechtstreeks in SQL-query ingebed.
-    # Aanvaller kan SQL-code injecteren, bijv.: text: "; DROP TABLE quotes; --
-    # Dit kan de gehele database verwijderen of gevoelige gegevens stelen.
-    # In productie: Altijd voorbereid SQL gebruiken met parameter binding.
+    # OPZETTELIJK KWETSBAAR (Demo): SQL Injection in formulier
+    # Gebruiker kan SQL-code in de text-veld zetten, bijvoorbeeld: "; DROP TABLE quotes; --
+    # Hiermee kan de hele database verwijderd worden. Slecht idee!
     with db:
         db.execute(f"""insert into quotes(text,attribution) values("{request.form['text']}","{request.form['attribution']}")""")
     return redirect("/#bottom")
@@ -69,11 +65,9 @@ def post_quote():
 # Post a new comment
 @app.route("/quotes/<int:quote_id>/comments", methods=["POST"])
 def post_comment(quote_id):
-    # ⚠️ OPZETTELIJK KWETSBAAR (Demo): SQL Injection + Cross-Site Scripting (XSS)
-    # 1. Gebruikersinvoer wordt zonder escaping in SQL geïnterpoleerd.
-    # 2. Commentaar wordt zonder HTML-escaping weergegeven in de browser.
-    # Dit stelt aanvallers in staat JavaScript code in te voeren die in slachtoffers' browsers wordt uitgevoerd.
-    # In productie: SQL parameterisatie UÉN HTML-escaping gebruiken bij uitvoer.
+    # OPZETTELIJK KWETSBAAR (Demo): SQL Injection + JavaScript in HTML
+    # 1. Comment gaat rechtstreeks in SQL. 2. Commentaar wordt zonder escaping in HTML gezet.
+    # Aanvaller kan JavaScript injecteren die in elke bezoeker's browser wordt uitgevoerd.
     with db:
         db.execute(f"""insert into comments(text,quote_id,user_id) values("{request.form['text']}",{quote_id},{request.user_id})""")
     return redirect(f"/quotes/{quote_id}#bottom")
@@ -85,35 +79,27 @@ def signin():
     username = request.form["username"].lower()
     password = request.form["password"]
 
-    # ⚠️ OPZETTELIJK KWETSBAAR (Demo): SQL Injection in Authenticatie
-    # Gebruikersnaam wordt rechtstreeks in SQL geïnterpoleerd, waardoor authenticatie geheel wordt omzeild.
-    # Aanvalsvoorbeeld: gebruikersnaam: ' OR '1'='1
-    # Dit geeft aanvallers meteen toegang tot het systeem zonder wachtwoord.
-    # In productie: Altijd parameterized queries gebruiken.
+    # OPZETTELIJK KWETSBAAR (Demo): SQL Injection in login
+    # Gebruikersnaam gaat rechtstreeks in SQL. Type ' OR '1'='1 en je bent ingelogd.
     user = db.execute(f"select id, password from users where name='{username}'").fetchone()
     if user: # user exists
-        # ⚠️ OPZETTELIJK KWETSBAAR (Demo): Wachtwoorden in plaintext opgeslagen
-        # Wachtwoorden worden in plaintext opgeslagen. Geen hashing (bcrypt, Argon2, etc).
-        # Bij een database-inbraak zijn alle gebruikerswachtwoorden onmiddellijk zichtbaar.
-        # In productie: ALTIJD sterke hashing-algoritmes gebruiken (bcrypt, PBKDF2, Argon2).
+        # OPZETTELIJK KWETSBAAR (Demo): Wachtwoord staat zomaar in de database
+        # Gewoon plaintext, geen hashing. Bij een hack zijn alle wachtwoorden zichtbaar.
         if password != user['password']:
             # wrong! redirect to main page with an error message
             return redirect('/?error='+urllib.parse.quote("Invalid password!"))
         user_id = user['id']
     else: # new sign up
         with db:
-            # ⚠️ OPZETTELIJK KWETSBAAR (Demo): SQL Injection + Plaintext Wachtwoorden
-            # Gebruikersnaam EN wachtwoord worden direct in INSERT-statement geïnterpoleerd.
-            # Wachtwoord wordt opgeslagen zonder enige hashing.
-            # Dit is kritiek: aanvallers kunnen accounts creëren met willekeurige wachtwoorden.
+            # OPZETTELIJK KWETSBAAR (Demo): SQL Injection + plaintext wachtwoord
+            # Gebruikersnaam en wachtwoord gaan beide rechtstreeks in SQL.
+            # Wachtwoord wordt niet gehasht. Aanvallers kunnen zomaar accounts hack.
             cursor = db.execute(f"insert into users(name,password) values('{username}', '{password}')")
             user_id = cursor.lastrowid
 
-    # ⚠️ OPZETTELIJK KWETSBAAR (Demo): Zwakke Sessie Management (Cookie Forgery)
-    # User ID wordt in plain text cookie opgeslagen zonder handtekening of versleuteling.
-    # Aanvaller kan gemakkelijk een cookie verversen om als willekeurige gebruiker in te loggen (bijv. user_id=1).
-    # Er is geen CSRF-bescherming en geen Secure/HttpOnly flags op de cookie ingesteld.
-    # In productie: JWT/OAuth, cryptografisch ondertekende cookies, en Secure/HttpOnly vlaggen gebruiken.
+    # OPZETTELIJK KWETSBAAR (Demo): Cookie is niet beveiligd
+    # User ID staat zomaar in de cookie. Aanvaller kan de cookie veranderen naar user_id=1
+    # en is ingelogd als die andere persoon. Geen beveiliging.
     response = make_response(redirect('/'))
     response.set_cookie('user_id', str(user_id))
     return response

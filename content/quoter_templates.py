@@ -9,15 +9,9 @@ def quote_fragment(id, text, attribution):
 
 
 def comment_fragment(text,user_name,time):
-  # ⚠️ OPZETTELIJK KWETSBAAR (Demo): Cross-Site Scripting (XSS) via HTML-rendering
-  # Gebruikersinvoer (text en user_name) worden rechtstreeks in HTML ingebed zonder escaping.
-  # Aanvaller kan JavaScript injecteren: text: <img src=x onerror="alert('XSS')">
-  # Dit script wordt in het browser van het slachtoffer uitgevoerd en kan:
-  # - Session cookies stelen
-  # - Gebruikers omleiden naar malware-sites
-  # - Gevoelige gegevens vastleggen
-  # - Accounts overnemen
-  # In productie: ALTIJD HTML-escaping gebruiken (Flask's Jinja2 doet dit automatisch).
+  # OPZETTELIJK KWETSBAAR (Demo): JavaScript injecteren in comments
+  # Gebruiker kan JavaScript schrijven in comment. Bijvoorbeeld: <img src=x onerror="alert('hacked')">
+  # Dit voert JavaScript uit in iedereen's browser die het comment ziet.
   time_html = f"<time>{time}</time>" if time else ""
   return f"""
 <section class="comment">

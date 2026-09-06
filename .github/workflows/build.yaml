@@ -48,10 +48,8 @@ jobs:
         if: github.event_name == 'push'
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
         with:
-          # ✅ BEST PRACTICE: Docker-inloggegevens uit GitHub repository secrets laden.
-          # NOOIT hardgecodeerde inloggegevens gebruiken - dit is een beveiligingsrisico!
-          # Secrets: DOCKERHUB_LOGIN (gebruikersnaam) en DOCKER_HUB_PASSWORD (persoonlijk access token).
-          # Deze worden veilig geïnjecteerd en NOOIT in workflow-output gelogd.
+          # Docker login uit GitHub secrets. NOOIT hardcoded!
+          # Secrets worden veilig geïnjecteerd en niet in logs getoond.
           username: ${{ secrets.DOCKERHUB_LOGIN }}
           password: ${{ secrets.DOCKER_HUB_PASSWORD }}
 
@@ -82,10 +80,8 @@ jobs:
       - name: Login to Docker Hub
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
         with:
-          # ✅ BEST PRACTICE: Docker-inloggegevens uit GitHub repository secrets laden.
-          # NOOIT hardgecodeerde inloggegevens gebruiken - dit is een beveiligingsrisico!
-          # Secrets: DOCKERHUB_LOGIN (gebruikersnaam) en DOCKER_HUB_PASSWORD (persoonlijk access token).
-          # Deze worden veilig geïnjecteerd en NOOIT in workflow-output gelogd.
+          # Docker login uit GitHub secrets. NOOIT hardcoded!
+          # Secrets worden veilig geïnjecteerd en niet in logs getoond.
           username: ${{ secrets.DOCKERHUB_LOGIN }}
           password: ${{ secrets.DOCKER_HUB_PASSWORD }}
 
