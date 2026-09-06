@@ -18,7 +18,7 @@ spec:
     spec:
       containers:
       - name: quoterxp
-        image: ghcr.io/stensel8/devops-security/student-app:latest
+        image: ghcr.io/stensel8/devops-security:latest
         imagePullPolicy: Always
         ports:
           - containerPort: 5000
