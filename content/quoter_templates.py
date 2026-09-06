@@ -9,10 +9,15 @@ def quote_fragment(id, text, attribution):
 
 
 def comment_fragment(text,user_name,time):
-  # VULNERABILITY: Cross-Site Scripting (XSS)
-  # User-supplied text and user_name are directly embedded in HTML without escaping.
-  # An attacker can inject JavaScript: text: <img src=x onerror="alert('XSS')">
-  # This script executes in the victim's browser and can steal session cookies, redirect, etc.
+  # ⚠️ OPZETTELIJK KWETSBAAR (Demo): Cross-Site Scripting (XSS) via HTML-rendering
+  # Gebruikersinvoer (text en user_name) worden rechtstreeks in HTML ingebed zonder escaping.
+  # Aanvaller kan JavaScript injecteren: text: <img src=x onerror="alert('XSS')">
+  # Dit script wordt in het browser van het slachtoffer uitgevoerd en kan:
+  # - Session cookies stelen
+  # - Gebruikers omleiden naar malware-sites
+  # - Gevoelige gegevens vastleggen
+  # - Accounts overnemen
+  # In productie: ALTIJD HTML-escaping gebruiken (Flask's Jinja2 doet dit automatisch).
   time_html = f"<time>{time}</time>" if time else ""
   return f"""
 <section class="comment">
