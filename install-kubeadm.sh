@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Kubernetes "full" Installer Script (kubeadm + containerd)
+# kubeadm Installer Script (full Kubernetes + containerd)
 #
 # Prepares an Ubuntu/Debian node for a kubeadm-based cluster: disables swap,
 # loads the required kernel modules, installs containerd and the
@@ -8,7 +8,7 @@
 # Does NOT run "kubeadm init" / "kubeadm join" - the summary prints the
 # commands to run next. Run as root.
 #
-# See install-k8s-light.sh for the K3s single-binary alternative.
+# See install-k3s.sh for the K3s single-binary alternative.
 #
 
 set -euo pipefail
@@ -97,7 +97,7 @@ Invoke-Cmd() {
 }
 
 # === Settings ===
-LOG_FILE="/tmp/k8s_full_install_$(date +%Y%m%d_%H%M%S).log"
+LOG_FILE="/tmp/kubeadm_install_$(date +%Y%m%d_%H%M%S).log"
 
 K8S_VERSION="${K8S_VERSION:-v1.37.0}"
 # pkgs.k8s.io repos are per minor version (v1.37), not per patch release.
@@ -112,7 +112,7 @@ Test-Root
 DISTRO=$(Get-OsId)
 case "$DISTRO" in
     ubuntu|debian) : ;;
-    *) Stop-Script "This script targets Ubuntu/Debian. Detected: ${DISTRO}. Use install-k8s-light.sh (K3s) instead." ;;
+    *) Stop-Script "This script targets Ubuntu/Debian. Detected: ${DISTRO}. Use install-k3s.sh instead." ;;
 esac
 Write-Log INFO "Detected distribution: ${DISTRO}"
 
