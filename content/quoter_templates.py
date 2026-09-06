@@ -9,6 +9,9 @@ def quote_fragment(id, text, attribution):
 
 
 def comment_fragment(text,user_name,time):
+  # OPZETTELIJK KWETSBAAR (Demo): JavaScript injecteren in comments
+  # Gebruiker kan JavaScript schrijven in comment. Bijvoorbeeld: <img src=x onerror="alert('hacked')">
+  # Dit voert JavaScript uit in iedereen's browser die het comment ziet.
   time_html = f"<time>{time}</time>" if time else ""
   return f"""
 <section class="comment">
