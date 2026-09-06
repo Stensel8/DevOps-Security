@@ -73,8 +73,8 @@ jobs:
           file: ./Dockerfile
           push: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' }}
           tags: |
-            ghcr.io/${{ github.repository }}:latest
-            ghcr.io/${{ github.repository }}:${{ github.sha }}
+            ghcr.io/stensel8/devops-security:latest
+            ghcr.io/stensel8/devops-security:${{ github.sha }}
 
       - name: Build and push to Docker Hub (optional)
         if: github.event_name == 'workflow_dispatch' && github.event.inputs.push_to_dockerhub == 'true'
@@ -105,7 +105,7 @@ jobs:
       - name: Smoke test the container
         run: |
           set -euo pipefail
-          container=$(docker run -d -p 80:5000 ghcr.io/${{ github.repository }}:latest)
+          container=$(docker run -d -p 80:5000 ghcr.io/stensel8/devops-security:latest)
           trap 'docker rm -f "$container" >/dev/null 2>&1 || true' EXIT
           curl --fail --silent --show-error \
                --retry 10 --retry-delay 2 --retry-all-errors \
