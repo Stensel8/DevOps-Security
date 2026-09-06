@@ -1,14 +1,14 @@
-[tool.poetry]
+[project]
 name = "assignment"
 version = "0.1.0"
 description = ""
-authors = ["Saxion"]
-
-[tool.poetry.dependencies]
-python = "^3.14"
-flask = "^3.1.3"
-markupsafe = "3.0.3"
+authors = [{ name = "Saxion" }]
+requires-python = ">=3.14,<4.0"
+dependencies = [
+    "flask (>=3.1.3,<4.0.0)",
+    "markupsafe (==3.0.3)",
+]
 
 [build-system]
-requires = ["poetry>=0.12"]
-build-backend = "poetry.masonry.api"
+requires = ["poetry-core>=2.0.0"]
+build-backend = "poetry.core.masonry.api"
