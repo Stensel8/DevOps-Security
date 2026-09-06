@@ -18,10 +18,10 @@ spec:
     spec:
       containers:
       - name: quoterxp
-        image: hhmbroekman/student-app:latest
+        image: ghcr.io/stensel8/devops-security/student-app:latest
         imagePullPolicy: Always
         ports:
           - containerPort: 5000
       imagePullSecrets:
-        - name: regcred
+        - name: ghcr-secret
          
