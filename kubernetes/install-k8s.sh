@@ -2,16 +2,16 @@
 #
 # Kubernetes cluster installer - kubeadm + containerd (DevSecOps module, CN1 / CN2)
 #
-#   Control plane (CN1):  sudo ./install-k8s.sh --control-plane
-#   Worker       (CN2):   sudo ./install-k8s.sh --worker
-#                         sudo ./install-k8s.sh --worker --join "kubeadm join 10.0.0.1:6443 --token ..."
-#
 # Both roles get the same node prep (swap off, kernel modules, sysctl,
-# containerd, kubeadm/kubelet/kubectl). --control-plane then runs
-# "kubeadm init" + a Flannel CNI and prints the join command. --worker either
-# runs the --join command you pass or prints what to do next.
+# containerd, kubeadm/kubelet/kubectl). --control-plane then runs "kubeadm
+# init" + a Flannel CNI and prints the join command; --worker runs the --join
+# command you pass, or prints what to do next.
+#
+#   Control plane (CN1):  sudo ./install-k8s.sh --control-plane
+#   Worker       (CN2):   sudo ./install-k8s.sh --worker --join "kubeadm join ..."
 #
 # Targets Ubuntu/Debian. K3s alternative: see install-k3s.sh
+# Run as root.
 #
 
 set -euo pipefail
@@ -99,6 +99,33 @@ Invoke-Cmd() {
     fi
 }
 
+# ============================================================================
+# Usage
+# ============================================================================
+
+Show-Usage() {
+    cat <<'EOF'
+Usage: install-k8s.sh <role> [options]
+
+Roles:
+  --control-plane   Prep the node, run "kubeadm init" and install Flannel (CN1)
+  --worker          Prep the node; run --join if given, else print next steps (CN2)
+
+Options (worker):
+  --join CMD        The full "kubeadm join ..." line from the control plane
+                    (quote it)
+
+Other:
+  -h, --help        Show this help
+
+Targets Ubuntu/Debian.
+
+Examples:
+  sudo ./install-k8s.sh --control-plane
+  sudo ./install-k8s.sh --worker --join "kubeadm join 10.0.0.1:6443 --token ..."
+EOF
+}
+
 # === Settings ===
 LOG_FILE="/tmp/k8s_install_$(date +%Y%m%d_%H%M%S).log"
 
@@ -109,51 +136,24 @@ K8S_APT_URL="https://pkgs.k8s.io/core:/stable:/${K8S_CHANNEL}/deb/"
 POD_CIDR="${POD_CIDR:-10.244.0.0/16}"
 FLANNEL_MANIFEST="https://github.com/flannel-io/flannel/releases/latest/download/kube-flannel.yml"
 
-ROLE=""
-JOIN_CMD=""
+# === Commands ===
 
-# === Usage ===
-Show-Usage() {
-    cat <<EOF
-Usage: $0 --control-plane
-       $0 --worker [--join "kubeadm join ..."]
-
-  --control-plane   Prep the node, run "kubeadm init" and install Flannel.
-  --worker          Prep the node; run --join if given, else print next steps.
-  --join <cmd>      Worker only: the full "kubeadm join ..." line from the
-                    control plane (quote it).
-  -h, --help        Show this help.
-EOF
-}
-
-# === Parse arguments ===
-while [[ $# -gt 0 ]]; do
-    case "$1" in
-        --control-plane) ROLE="control-plane"; shift ;;
-        --worker)        ROLE="worker"; shift ;;
-        --join)          JOIN_CMD="${2:-}"; shift 2 ;;
-        -h|--help)       Show-Usage; exit 0 ;;
-        *)               Show-Usage; Stop-Script "Unknown argument: $1" ;;
+# Usage: Initialize-Node
+# Shared node prep for both roles. No-op if kubeadm is already installed.
+Initialize-Node() {
+    local distro
+    distro=$(Get-OsId)
+    case "$distro" in
+        ubuntu|debian) : ;;
+        *) Stop-Script "This script targets Ubuntu/Debian. Detected: ${distro}. Use install-k3s.sh instead." ;;
     esac
-done
+    Write-Log INFO "Detected distribution: ${distro}"
 
-[[ -n "$ROLE" ]] || { Show-Usage; Stop-Script "Pass --control-plane or --worker."; }
+    if command -v kubeadm &>/dev/null; then
+        Write-Log WARN "kubeadm already installed ($(kubeadm version -o short 2>/dev/null)); skipping node prep."
+        return 0
+    fi
 
-# === Root check ===
-Test-Root
-
-# === Distro check ===
-DISTRO=$(Get-OsId)
-case "$DISTRO" in
-    ubuntu|debian) : ;;
-    *) Stop-Script "This script targets Ubuntu/Debian. Detected: ${DISTRO}. Use install-k3s.sh instead." ;;
-esac
-Write-Log INFO "Detected distribution: ${DISTRO}"
-
-# === Node prep (skip if kubeadm is already present) ===
-if command -v kubeadm &>/dev/null; then
-    Write-Log WARN "kubeadm already installed ($(kubeadm version -o short 2>/dev/null)); skipping node prep."
-else
     Write-Log STEP "Disabling swap"
     swapoff -a
     sed -i.bak '/\sswap\s/s/^\(.*\)$/#\1/' /etc/fstab
@@ -180,13 +180,13 @@ EOF
     Invoke-Cmd apt-get install -y ca-certificates curl gnupg lsb-release
 
     install -d -m 0755 /etc/apt/keyrings
-    curl -fsSL "https://download.docker.com/linux/${DISTRO}/gpg" | \
+    curl -fsSL "https://download.docker.com/linux/${distro}/gpg" | \
         gpg --dearmor -o /etc/apt/keyrings/docker.gpg 2>>"$LOG_FILE" || \
         Stop-Script "Failed to add Docker GPG key."
     chmod a+r /etc/apt/keyrings/docker.gpg
 
     echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
-https://download.docker.com/linux/${DISTRO} $(lsb_release -cs) stable" \
+https://download.docker.com/linux/${distro} $(lsb_release -cs) stable" \
         > /etc/apt/sources.list.d/docker.list
 
     Invoke-Cmd apt-get update -y
@@ -215,53 +215,96 @@ https://download.docker.com/linux/${DISTRO} $(lsb_release -cs) stable" \
 
     systemctl daemon-reload
     Invoke-Cmd systemctl enable --now kubelet
-fi
+}
 
-if [[ "$ROLE" == "control-plane" ]]; then
-    # === kubeadm init ===
+# Usage: Install-ControlPlane
+Install-ControlPlane() {
+    Initialize-Node
+
     Write-Log STEP "Running kubeadm init (pod CIDR ${POD_CIDR})"
     Invoke-Cmd kubeadm init --pod-network-cidr="${POD_CIDR}"
 
     # Make kubectl work for the invoking user and for root.
-    TARGET_USER="${SUDO_USER:-root}"
-    TARGET_HOME=$(getent passwd "$TARGET_USER" | cut -d: -f6)
-    install -d -m 0755 -o "$TARGET_USER" "${TARGET_HOME}/.kube"
-    install -m 0600 -o "$TARGET_USER" /etc/kubernetes/admin.conf "${TARGET_HOME}/.kube/config"
+    local target_user target_home
+    target_user="${SUDO_USER:-root}"
+    target_home=$(getent passwd "$target_user" | cut -d: -f6)
+    install -d -m 0755 -o "$target_user" "${target_home}/.kube"
+    install -m 0600 -o "$target_user" /etc/kubernetes/admin.conf "${target_home}/.kube/config"
     export KUBECONFIG=/etc/kubernetes/admin.conf
 
     Write-Log STEP "Installing the Flannel CNI"
     Invoke-Cmd kubectl apply -f "${FLANNEL_MANIFEST}"
 
-    JOIN_LINE=$(kubeadm token create --print-join-command 2>>"$LOG_FILE")
-    KUBEADM_VER=$(kubeadm version -o short 2>/dev/null) || KUBEADM_VER="N/A"
+    local join_line kubeadm_ver
+    join_line=$(kubeadm token create --print-join-command 2>>"$LOG_FILE")
+    kubeadm_ver=$(kubeadm version -o short 2>/dev/null) || kubeadm_ver="N/A"
 
     echo -e "\n${GREEN}==============================================================${NC}"
     Write-Log SUCCESS "Kubernetes control plane ready!"
     echo -e "${GREEN}==============================================================${NC}\n"
-    echo -e "${BLUE}kubeadm:${NC}      ${GREEN}${KUBEADM_VER}${NC}"
-    echo -e "${BLUE}kubeconfig:${NC}   ${GREEN}${TARGET_HOME}/.kube/config${NC}"
+    echo -e "${BLUE}kubeadm:${NC}      ${GREEN}${kubeadm_ver}${NC}"
+    echo -e "${BLUE}kubeconfig:${NC}   ${GREEN}${target_home}/.kube/config${NC}"
     echo -e "${BLUE}Log:${NC}          ${GREEN}${LOG_FILE}${NC}"
     echo ""
     echo -e "${BOLD}Join a worker (run on CN2)${NC}"
-    echo -e "  sudo ./install-k8s.sh --worker --join \"${JOIN_LINE}\""
+    echo -e "  sudo ./install-k8s.sh --worker --join \"${join_line}\""
     echo ""
-    echo -e "${YELLOW}AWS:${NC} open TCP 6443 (API) and 30000 (app NodePort) inbound in the security group."
-else
-    # === Worker ===
-    if [[ -n "$JOIN_CMD" ]]; then
+    echo -e "${YELLOW}AWS:${NC} allow node-to-node traffic in the security group (self-referencing"
+    echo -e "     'All traffic' rule), plus TCP 30000 inbound for the app NodePort."
+}
+
+# Usage: Install-Worker [kubeadm-join-command]
+Install-Worker() {
+    local join_cmd=$1
+    Initialize-Node
+
+    local msg
+    if [[ -n "$join_cmd" ]]; then
         Write-Log STEP "Joining the cluster"
         # shellcheck disable=SC2086  # the join command is a full command line
-        Invoke-Cmd $JOIN_CMD
-        MSG="Worker joined the cluster."
+        Invoke-Cmd $join_cmd
+        msg="Worker joined the cluster."
     else
-        MSG="Node prepared. Run the 'kubeadm join ...' line from the control plane (or re-run with --join)."
+        msg="Node prepared. Run the 'kubeadm join ...' line from the control plane (or re-run with --join)."
     fi
 
     echo -e "\n${GREEN}==============================================================${NC}"
-    Write-Log SUCCESS "$MSG"
+    Write-Log SUCCESS "$msg"
     echo -e "${GREEN}==============================================================${NC}\n"
     echo -e "${BLUE}Log:${NC}          ${GREEN}${LOG_FILE}${NC}"
     echo ""
     echo -e "${BOLD}Verify on the control plane (CN1)${NC}"
     echo -e "  kubectl get node"
-fi
+}
+
+# ============================================================================
+# Main Entry Point
+# ============================================================================
+
+ROLE=""
+JOIN_CMD=""
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --control-plane)
+            ROLE="control-plane"; shift ;;
+        --worker)
+            ROLE="worker"; shift ;;
+        --join)
+            JOIN_CMD=${2:-}
+            [[ -n "$JOIN_CMD" ]] || Stop-Script "--join requires a value"
+            shift 2 ;;
+        -h|--help)
+            Show-Usage; exit 0 ;;
+        *)
+            Write-Log ERROR "Unknown argument: $1"; Show-Usage; exit 1 ;;
+    esac
+done
+
+Test-Root
+
+case "$ROLE" in
+    control-plane) Install-ControlPlane ;;
+    worker)        Install-Worker "$JOIN_CMD" ;;
+    *)             Show-Usage; Stop-Script "Pass --control-plane or --worker." ;;
+esac
