@@ -48,6 +48,9 @@ jobs:
         if: github.event_name == 'push'
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
         with:
+          # Load Docker credentials from GitHub repository secrets (never hardcode credentials).
+          # Secrets: DOCKERHUB_LOGIN (username) and DOCKER_HUB_PASSWORD (personal access token).
+          # These are injected securely and never logged in workflow output.
           username: ${{ secrets.DOCKERHUB_LOGIN }}
           password: ${{ secrets.DOCKER_HUB_PASSWORD }}
 
@@ -78,6 +81,9 @@ jobs:
       - name: Login to Docker Hub
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
         with:
+          # Load Docker credentials from GitHub repository secrets (never hardcode credentials).
+          # Secrets: DOCKERHUB_LOGIN (username) and DOCKER_HUB_PASSWORD (personal access token).
+          # These are injected securely and never logged in workflow output.
           username: ${{ secrets.DOCKERHUB_LOGIN }}
           password: ${{ secrets.DOCKER_HUB_PASSWORD }}
 

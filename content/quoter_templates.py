@@ -9,6 +9,10 @@ def quote_fragment(id, text, attribution):
 
 
 def comment_fragment(text,user_name,time):
+  # VULNERABILITY: Cross-Site Scripting (XSS)
+  # User-supplied text and user_name are directly embedded in HTML without escaping.
+  # An attacker can inject JavaScript: text: <img src=x onerror="alert('XSS')">
+  # This script executes in the victim's browser and can steal session cookies, redirect, etc.
   time_html = f"<time>{time}</time>" if time else ""
   return f"""
 <section class="comment">
