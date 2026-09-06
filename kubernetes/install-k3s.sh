@@ -2,15 +2,17 @@
 #
 # K3s cluster installer (DevSecOps module, CN1 / CN2 on AWS)
 #
+# Installs K3s via the official installer at https://get.k3s.io. The installer
+# bundles containerd, so it works on any systemd-based Linux without a distro
+# package manager. Kubernetes role names are used (control plane / worker);
+# K3s' own "server / agent" wording is mapped internally.
+#
 #   Control plane (CN1):  sudo ./install-k3s.sh --control-plane
 #   Worker       (CN2):   sudo ./install-k3s.sh --worker \
 #                             --url https://<control-plane-ip>:6443 --token <token>
 #
-# --control-plane prints the join URL, the node token and the exact worker
-# command. Kubernetes terminology (control plane / worker) is used throughout;
-# K3s' own "server / agent" wording is mapped internally.
-#
 # kubeadm alternative: see install-k8s.sh
+# Run as root.
 #
 
 set -euo pipefail
@@ -98,108 +100,157 @@ Invoke-Cmd() {
     fi
 }
 
-# === Settings ===
-LOG_FILE="/tmp/k3s_install_$(date +%Y%m%d_%H%M%S).log"
-INSTALL_K3S_VERSION="${INSTALL_K3S_VERSION:-}"  # optional pin, e.g. v1.36.4+k3s1
-export INSTALL_K3S_VERSION
+# ============================================================================
+# Usage
+# ============================================================================
 
-ROLE=""
-SERVER_URL=""
-JOIN_TOKEN=""
-
-# === Usage ===
 Show-Usage() {
-    cat <<EOF
-Usage: $0 --control-plane
-       $0 --worker --url https://<control-plane-ip>:6443 --token <token>
+    cat <<'EOF'
+Usage: install-k3s.sh <role> [options]
 
-  --control-plane   Install the first K3s node (control plane).
-  --worker          Join this node to the cluster as a worker.
-  --url <url>       Worker only: control-plane API URL (or a bare IP/host).
-  --token <token>   Worker only: node token from the control plane.
-  -h, --help        Show this help.
+Roles:
+  --control-plane   Install the first K3s node (control plane, CN1)
+  --worker          Join this node to the cluster as a worker (CN2)
+
+Options (worker):
+  --url URL         Control-plane API URL, or a bare IP/host (-> https://IP:6443)
+  --token VALUE     Join value from the control plane
+                    (/var/lib/rancher/k3s/server/node-token)
+
+Other:
+  -h, --help        Show this help
+
+After a --control-plane install the summary prints the join value and the
+exact --worker command to run on CN2.
+
+Examples:
+  sudo ./install-k3s.sh --control-plane
+  sudo ./install-k3s.sh --worker --url https://10.0.0.1:6443 --token K10abc...
 EOF
 }
 
-# === Parse arguments ===
-while [[ $# -gt 0 ]]; do
-    case "$1" in
-        --control-plane) ROLE="control-plane"; shift ;;
-        --worker)        ROLE="worker"; shift ;;
-        --url)           SERVER_URL="${2:-}"; shift 2 ;;
-        --token)         JOIN_TOKEN="${2:-}"; shift 2 ;;
-        -h|--help)       Show-Usage; exit 0 ;;
-        *)               Show-Usage; Stop-Script "Unknown argument: $1" ;;
-    esac
-done
+# === Settings ===
+LOG_FILE="/tmp/k3s_install_$(date +%Y%m%d_%H%M%S).log"
 
-[[ -n "$ROLE" ]] || { Show-Usage; Stop-Script "Pass --control-plane or --worker."; }
+# K3s release to install. get.k3s.io reads INSTALL_K3S_VERSION; override with
+# INSTALL_K3S_VERSION= to track latest stable. Bump this manually.
+K3S_VERSION="${INSTALL_K3S_VERSION:-v1.36.4+k3s1}"
 
-# === Root check ===
-Test-Root
+# === Commands ===
 
-# === Already installed? ===
-if command -v k3s &>/dev/null; then
-    Write-Log WARN "K3s is already installed: $(k3s --version | head -n1)"
-    Write-Log INFO "Uninstall with k3s-uninstall.sh (control plane) or k3s-agent-uninstall.sh (worker)."
-    exit 0
-fi
+# Usage: Install-ControlPlane
+Install-ControlPlane() {
+    Write-Log INFO "Installing K3s ${K3S_VERSION:-latest} (control plane)"
 
-# get.k3s.io is Rancher's official install path; it is a remote script.
-Write-Log WARN "Fetching and running the official installer from https://get.k3s.io"
-
-if [[ "$ROLE" == "control-plane" ]]; then
-    # === Control plane ===
-    Write-Log STEP "Installing K3s control plane"
-    curl -sfL https://get.k3s.io | sh - >> "$LOG_FILE" 2>&1 || \
+    # get.k3s.io is Rancher's official install path; it is a remote script.
+    Write-Log WARN "Fetching and running the official installer from https://get.k3s.io"
+    curl -sfL https://get.k3s.io | \
+        INSTALL_K3S_VERSION="$K3S_VERSION" sh -s - server >> "$LOG_FILE" 2>&1 || \
         Stop-Script "K3s install failed. Check log: $LOG_FILE"
     Invoke-Cmd systemctl enable k3s
 
     Write-Log INFO "Waiting for the node to become Ready..."
+    local _
     for _ in $(seq 1 45); do
         k3s kubectl get node 2>/dev/null | grep -q ' Ready ' && break
         sleep 2
     done
     k3s kubectl get node || Write-Log WARN "Node not Ready yet; re-check with 'sudo k3s kubectl get node'."
 
-    NODE_IP=$(hostname -I | awk '{print $1}')
-    NODE_TOKEN=$(cat /var/lib/rancher/k3s/server/node-token 2>/dev/null || echo "unavailable")
-    K3S_VER=$(k3s --version 2>/dev/null | head -n1) || K3S_VER="N/A"
+    local node_ip node_join k3s_ver
+    node_ip=$(hostname -I | awk '{print $1}')
+    node_join=$(cat /var/lib/rancher/k3s/server/node-token 2>/dev/null || true)
+    k3s_ver=$(k3s --version 2>/dev/null | head -n1) || k3s_ver="N/A"
 
     echo -e "\n${GREEN}==============================================================${NC}"
     Write-Log SUCCESS "K3s control plane ready!"
     echo -e "${GREEN}==============================================================${NC}\n"
-    echo -e "${BLUE}K3s:${NC}          ${GREEN}${K3S_VER}${NC}"
-    echo -e "${BLUE}API URL:${NC}      ${GREEN}https://${NODE_IP}:6443${NC}"
-    echo -e "${BLUE}Node token:${NC}   ${GREEN}${NODE_TOKEN}${NC}"
+    echo -e "${BLUE}K3s:${NC}          ${GREEN}${k3s_ver}${NC}"
+    echo -e "${BLUE}API URL:${NC}      ${GREEN}https://${node_ip}:6443${NC}"
     echo -e "${BLUE}kubeconfig:${NC}   ${GREEN}/etc/rancher/k3s/k3s.yaml${NC}"
     echo -e "${BLUE}Log:${NC}          ${GREEN}${LOG_FILE}${NC}"
     echo ""
     echo -e "${BOLD}Join a worker (run on CN2)${NC}"
     echo -e "  sudo ./install-k3s.sh --worker \\"
-    echo -e "      --url https://${NODE_IP}:6443 --token ${NODE_TOKEN}"
+    echo -e "      --url https://${node_ip}:6443 --token ${node_join:-(see /var/lib/rancher/k3s/server/node-token)}"
     echo ""
-    echo -e "${YELLOW}AWS:${NC} open TCP 6443 (API) and 30000 (app NodePort) inbound in the security group."
-else
-    # === Worker ===
-    [[ -n "$SERVER_URL"  ]] || Stop-Script "Worker needs --url https://<control-plane-ip>:6443"
-    [[ -n "$JOIN_TOKEN"  ]] || Stop-Script "Worker needs --token <node token from the control plane>"
-    [[ "$SERVER_URL" == https://* ]] || SERVER_URL="https://${SERVER_URL}:6443"
+    echo -e "${YELLOW}AWS:${NC} allow node-to-node traffic in the security group (self-referencing"
+    echo -e "     'All traffic' rule), plus TCP 30000 inbound for the app NodePort."
+}
 
-    Write-Log STEP "Joining ${SERVER_URL} as a worker"
-    curl -sfL https://get.k3s.io | K3S_URL="$SERVER_URL" K3S_TOKEN="$JOIN_TOKEN" sh - >> "$LOG_FILE" 2>&1 || \
-        Stop-Script "K3s worker install failed. Check log: $LOG_FILE"
+# Usage: Install-Worker <server-url-or-ip> <join-value>
+Install-Worker() {
+    local url=$1 join=$2
+
+    [[ -n "$url"  ]] || Stop-Script "Worker needs --url https://<control-plane-ip>:6443"
+    [[ -n "$join" ]] || Stop-Script "Worker needs --token <value from the control plane>"
+    [[ "$url" == https://* ]] || url="https://${url}:6443"
+    [[ "$join" =~ ^[A-Za-z0-9:._-]+$ ]] || Stop-Script "The --token value has unexpected characters."
+
+    Write-Log INFO "Installing K3s ${K3S_VERSION:-latest} (worker), joining ${url}"
+
+    # get.k3s.io is Rancher's official install path; it is a remote script.
+    Write-Log WARN "Fetching and running the official installer from https://get.k3s.io"
+    curl -sfL https://get.k3s.io | \
+        INSTALL_K3S_VERSION="$K3S_VERSION" K3S_URL="$url" K3S_TOKEN="$join" \
+        sh -s - agent >> "$LOG_FILE" 2>&1 || \
+        Stop-Script "K3s agent install failed. Check log: $LOG_FILE"
     Invoke-Cmd systemctl enable k3s-agent
 
-    K3S_VER=$(k3s --version 2>/dev/null | head -n1) || K3S_VER="N/A"
+    local k3s_ver
+    k3s_ver=$(k3s --version 2>/dev/null | head -n1) || k3s_ver="N/A"
 
     echo -e "\n${GREEN}==============================================================${NC}"
     Write-Log SUCCESS "K3s worker joined!"
     echo -e "${GREEN}==============================================================${NC}\n"
-    echo -e "${BLUE}K3s:${NC}          ${GREEN}${K3S_VER}${NC}"
-    echo -e "${BLUE}Joined:${NC}       ${GREEN}${SERVER_URL}${NC}"
+    echo -e "${BLUE}K3s:${NC}          ${GREEN}${k3s_ver}${NC}"
+    echo -e "${BLUE}Joined:${NC}       ${GREEN}${url}${NC}"
     echo -e "${BLUE}Log:${NC}          ${GREEN}${LOG_FILE}${NC}"
     echo ""
     echo -e "${BOLD}Verify on the control plane (CN1)${NC}"
     echo -e "  sudo k3s kubectl get node        # this node should be Ready within ~30s"
+}
+
+# ============================================================================
+# Main Entry Point
+# ============================================================================
+
+ROLE=""
+SERVER_URL=""
+JOIN_VALUE=""
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --control-plane)
+            ROLE="control-plane"; shift ;;
+        --worker)
+            ROLE="worker"; shift ;;
+        --url)
+            SERVER_URL=${2:-}
+            [[ -n "$SERVER_URL" ]] || Stop-Script "--url requires a value"
+            shift 2 ;;
+        --token)
+            JOIN_VALUE=${2:-}
+            [[ -n "$JOIN_VALUE" ]] || Stop-Script "--token requires a value"
+            shift 2 ;;
+        -h|--help)
+            Show-Usage; exit 0 ;;
+        *)
+            Write-Log ERROR "Unknown argument: $1"; Show-Usage; exit 1 ;;
+    esac
+done
+
+Test-Root
+[[ -d /run/systemd/system ]] || Stop-Script "K3s requires a systemd-based system."
+
+if command -v k3s &>/dev/null; then
+    Write-Log WARN "K3s is already installed: $(k3s --version | head -n1)"
+    Write-Log INFO "Remove it first: k3s-uninstall.sh (control plane) or k3s-agent-uninstall.sh (worker)."
+    exit 0
 fi
+
+case "$ROLE" in
+    control-plane) Install-ControlPlane ;;
+    worker)        Install-Worker "$SERVER_URL" "$JOIN_VALUE" ;;
+    *)             Show-Usage; Stop-Script "Pass --control-plane or --worker." ;;
+esac
