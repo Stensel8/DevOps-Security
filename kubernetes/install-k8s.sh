@@ -1,16 +1,19 @@
 #!/usr/bin/env bash
 #
-# Kubernetes cluster installer - kubeadm + containerd (DevSecOps module, CN1 / CN2)
+# Kubernetes (kubeadm) Installer Script
 #
-# Both roles get the same node prep (swap off, kernel modules, sysctl,
-# containerd, kubeadm/kubelet/kubectl). --control-plane then runs "kubeadm
-# init" + a Flannel CNI and prints the join command; --worker runs the --join
-# command you pass, or prints what to do next.
+# Builds an upstream Kubernetes cluster with kubeadm, containerd and the
+# Flannel CNI. Both roles get the same node prep (swap off, kernel modules,
+# sysctl, containerd, pinned kubeadm/kubelet/kubectl); --control-plane then
+# runs "kubeadm init" + Flannel, --worker runs "kubeadm join".
 #
-#   Control plane (CN1):  sudo ./install-k8s.sh --control-plane
-#   Worker       (CN2):   sudo ./install-k8s.sh --worker --join "kubeadm join ..."
+#   Control plane:  sudo ./<script> --control-plane
+#   Worker:         sudo ./<script> --worker --url <control-plane-ip>:6443 \
+#                       --token <token> --ca-cert-hash sha256:<hash>
 #
-# Targets Ubuntu/Debian. K3s alternative: see install-k3s.sh
+# Targets Ubuntu/Debian. For other systemd distros use the K3s installer.
+# This file is kept identical in THectic-NL/Scripts (kubernetes/k8s_installer.sh)
+# and Stensel8/DevOps-Security (kubernetes/install-k8s.sh); change both.
 # Run as root.
 #
 
@@ -103,105 +106,123 @@ Invoke-Cmd() {
 # Usage
 # ============================================================================
 
+# Name as invoked, so help and join hints match however the file was saved.
+SCRIPT_NAME=$(basename "$0")
+
 Show-Usage() {
-    cat <<'EOF'
-Usage: install-k8s.sh <role> [options]
+    cat <<USAGE
+Usage: ${SCRIPT_NAME} <role> [options]
 
 Roles:
-  --control-plane   Prep the node, run "kubeadm init" and install Flannel (CN1)
-  --worker          Prep the node; run --join if given, else print next steps (CN2)
+  --control-plane       Prep the node, run "kubeadm init" and install Flannel
+  --worker              Prep the node and join an existing cluster as a worker
 
 Options (worker):
-  --join CMD        The full "kubeadm join ..." line from the control plane
-                    (quote it)
+  --url HOST[:PORT]     Control-plane API endpoint; port defaults to 6443
+                        (an https:// prefix is accepted and stripped)
+  --token VALUE         Bootstrap token from the control plane (valid 24h)
+  --ca-cert-hash VALUE  sha256:<hash> of the cluster CA
 
 Other:
-  -h, --help        Show this help
+  -h, --help            Show this help
+
+After a --control-plane install the summary prints the exact --worker command
+to run on the other nodes. Expired token? On the control plane run:
+  sudo kubeadm token create --print-join-command
 
 Targets Ubuntu/Debian.
 
 Examples:
-  sudo ./install-k8s.sh --control-plane
-  sudo ./install-k8s.sh --worker --join "kubeadm join 10.0.0.1:6443 --token ..."
-EOF
+  sudo ./${SCRIPT_NAME} --control-plane
+  sudo ./${SCRIPT_NAME} --worker --url 10.0.0.1:6443 \\
+      --token abcdef.0123456789abcdef --ca-cert-hash sha256:1234...
+USAGE
 }
 
 # === Settings ===
 LOG_FILE="/tmp/k8s_install_$(date +%Y%m%d_%H%M%S).log"
 
+# Pinned releases (Renovate-managed).
 K8S_VERSION="${K8S_VERSION:-v1.37.0}"
-# pkgs.k8s.io repos are per minor version (v1.37), not per patch release.
+FLANNEL_VERSION="${FLANNEL_VERSION:-v0.28.9}"
+
+# pkgs.k8s.io repos are per minor version (v1.37); the patch release is pinned
+# through the package version (1.37.0-*).
 K8S_CHANNEL="${K8S_VERSION%.*}"
 K8S_APT_URL="https://pkgs.k8s.io/core:/stable:/${K8S_CHANNEL}/deb/"
+K8S_PKG_VERSION="${K8S_VERSION#v}-*"
 POD_CIDR="${POD_CIDR:-10.244.0.0/16}"
-FLANNEL_MANIFEST="https://github.com/flannel-io/flannel/releases/latest/download/kube-flannel.yml"
+FLANNEL_MANIFEST="https://github.com/flannel-io/flannel/releases/download/${FLANNEL_VERSION}/kube-flannel.yml"
+
+export DEBIAN_FRONTEND=noninteractive
 
 # === Commands ===
 
 # Usage: Initialize-Node
 # Shared node prep for both roles. No-op if kubeadm is already installed.
 Initialize-Node() {
-    local distro
-    distro=$(Get-OsId)
-    case "$distro" in
-        ubuntu|debian) : ;;
-        *) Stop-Script "This script targets Ubuntu/Debian. Detected: ${distro}. Use install-k3s.sh instead." ;;
-    esac
-    Write-Log INFO "Detected distribution: ${distro}"
-
     if command -v kubeadm &>/dev/null; then
         Write-Log WARN "kubeadm already installed ($(kubeadm version -o short 2>/dev/null)); skipping node prep."
         return 0
     fi
+
+    local distro codename
+    distro=$(Get-OsId)
+    # shellcheck disable=SC1091
+    codename=$(. /etc/os-release && echo "${VERSION_CODENAME:-}")
 
     Write-Log STEP "Disabling swap"
     swapoff -a
     sed -i.bak '/\sswap\s/s/^\(.*\)$/#\1/' /etc/fstab
 
     Write-Log STEP "Loading kernel modules (overlay, br_netfilter)"
-    cat > /etc/modules-load.d/k8s.conf <<EOF
+    cat > /etc/modules-load.d/k8s.conf <<CONF
 overlay
 br_netfilter
-EOF
+CONF
     modprobe overlay
     modprobe br_netfilter
 
     Write-Log STEP "Applying sysctl settings"
-    cat > /etc/sysctl.d/k8s.conf <<EOF
+    cat > /etc/sysctl.d/k8s.conf <<CONF
 net.bridge.bridge-nf-call-iptables  = 1
 net.bridge.bridge-nf-call-ip6tables = 1
 net.ipv4.ip_forward                 = 1
-EOF
+CONF
     sysctl --system >> "$LOG_FILE" 2>&1
 
     # containerd.io ships from the Docker apt repo; Docker itself is not installed.
     Write-Log STEP "Installing containerd"
     Invoke-Cmd apt-get update -y
-    Invoke-Cmd apt-get install -y ca-certificates curl gnupg lsb-release
+    Invoke-Cmd apt-get install -y ca-certificates curl gnupg
 
     install -d -m 0755 /etc/apt/keyrings
     curl -fsSL "https://download.docker.com/linux/${distro}/gpg" | \
-        gpg --dearmor -o /etc/apt/keyrings/docker.gpg 2>>"$LOG_FILE" || \
-        Stop-Script "Failed to add Docker GPG key."
+        gpg --dearmor --yes -o /etc/apt/keyrings/docker.gpg 2>>"$LOG_FILE" || \
+        Stop-Script "Failed to add the Docker GPG key."
     chmod a+r /etc/apt/keyrings/docker.gpg
 
     echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
-https://download.docker.com/linux/${distro} $(lsb_release -cs) stable" \
+https://download.docker.com/linux/${distro} ${codename} stable" \
         > /etc/apt/sources.list.d/docker.list
 
     Invoke-Cmd apt-get update -y
     Invoke-Cmd apt-get install -y containerd.io
 
+    # kubelet uses the systemd cgroup driver; containerd must match or pods
+    # restart in a loop. Fail loudly if the default config layout changed.
     Write-Log INFO "Configuring containerd with the systemd cgroup driver"
     mkdir -p /etc/containerd
     containerd config default > /etc/containerd/config.toml
     sed -i 's/SystemdCgroup = false/SystemdCgroup = true/' /etc/containerd/config.toml
+    grep -q 'SystemdCgroup = true' /etc/containerd/config.toml || \
+        Stop-Script "Could not enable SystemdCgroup in /etc/containerd/config.toml."
     Invoke-Cmd systemctl restart containerd
     Invoke-Cmd systemctl enable containerd
 
-    Write-Log STEP "Installing kubeadm/kubelet/kubectl (${K8S_CHANNEL})"
+    Write-Log STEP "Installing kubeadm/kubelet/kubectl ${K8S_VERSION}"
     curl -fsSL "${K8S_APT_URL}Release.key" | \
-        gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg 2>>"$LOG_FILE" || \
+        gpg --dearmor --yes -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg 2>>"$LOG_FILE" || \
         Stop-Script "Failed to download the Kubernetes signing key."
     chmod 644 /etc/apt/keyrings/kubernetes-apt-keyring.gpg
 
@@ -210,10 +231,9 @@ https://download.docker.com/linux/${distro} $(lsb_release -cs) stable" \
     chmod 644 /etc/apt/sources.list.d/kubernetes.list
 
     Invoke-Cmd apt-get update -y
-    Invoke-Cmd apt-get install -y kubelet kubeadm kubectl
+    Invoke-Cmd apt-get install -y "kubelet=${K8S_PKG_VERSION}" "kubeadm=${K8S_PKG_VERSION}" "kubectl=${K8S_PKG_VERSION}"
     apt-mark hold kubelet kubeadm kubectl >> "$LOG_FILE" 2>&1
 
-    systemctl daemon-reload
     Invoke-Cmd systemctl enable --now kubelet
 }
 
@@ -221,60 +241,110 @@ https://download.docker.com/linux/${distro} $(lsb_release -cs) stable" \
 Install-ControlPlane() {
     Initialize-Node
 
-    Write-Log STEP "Running kubeadm init (pod CIDR ${POD_CIDR})"
-    Invoke-Cmd kubeadm init --pod-network-cidr="${POD_CIDR}"
+    Write-Log STEP "Running kubeadm init (${K8S_VERSION}, pod CIDR ${POD_CIDR})"
+    kubeadm init --kubernetes-version "${K8S_VERSION}" --pod-network-cidr="${POD_CIDR}" >> "$LOG_FILE" 2>&1 || \
+        Stop-Script "kubeadm init failed. Check log: $LOG_FILE (reset with 'sudo kubeadm reset -f' before retrying)"
 
-    # Make kubectl work for the invoking user and for root.
-    local target_user target_home
-    target_user="${SUDO_USER:-root}"
-    target_home=$(getent passwd "$target_user" | cut -d: -f6)
-    install -d -m 0755 -o "$target_user" "${target_home}/.kube"
-    install -m 0600 -o "$target_user" /etc/kubernetes/admin.conf "${target_home}/.kube/config"
+    # admin.conf is root-only. Give root and the sudo user their own copy, so
+    # both 'kubectl' and 'sudo kubectl' work.
+    local kube_user="${SUDO_USER:-root}" kube_home
+    kube_home=$(getent passwd "$kube_user" | cut -d: -f6)
+    install -d -m 0700 /root/.kube
+    install -m 0600 /etc/kubernetes/admin.conf /root/.kube/config
+    if [[ "$kube_user" != root ]]; then
+        install -d -m 0700 -o "$kube_user" -g "$(id -gn "$kube_user")" "${kube_home}/.kube"
+        install -m 0600 -o "$kube_user" -g "$(id -gn "$kube_user")" /etc/kubernetes/admin.conf "${kube_home}/.kube/config"
+    fi
     export KUBECONFIG=/etc/kubernetes/admin.conf
 
-    Write-Log STEP "Installing the Flannel CNI"
+    Write-Log STEP "Installing the Flannel CNI ${FLANNEL_VERSION}"
     Invoke-Cmd kubectl apply -f "${FLANNEL_MANIFEST}"
 
-    local join_line kubeadm_ver
-    join_line=$(kubeadm token create --print-join-command 2>>"$LOG_FILE")
+    # The node only turns Ready once the CNI is up.
+    Write-Log INFO "Waiting for the node to become Ready..."
+    local _
+    for _ in $(seq 1 60); do
+        kubectl get node 2>/dev/null | grep -q ' Ready ' && break
+        sleep 2
+    done
+    kubectl get node || Write-Log WARN "Node not Ready yet; re-check with 'kubectl get node'."
+
+    # Split the join line into the worker flags this script takes.
+    local join_line endpoint join_token ca_hash kubeadm_ver
+    join_line=$(kubeadm token create --print-join-command 2>>"$LOG_FILE") || \
+        Stop-Script "Could not create a join token. Check log: $LOG_FILE"
+    endpoint=$(awk '{print $3}' <<< "$join_line")
+    join_token=$(awk '{for (i = 1; i < NF; i++) if ($i == "--token") print $(i + 1)}' <<< "$join_line")
+    ca_hash=$(awk '{for (i = 1; i < NF; i++) if ($i == "--discovery-token-ca-cert-hash") print $(i + 1)}' <<< "$join_line")
     kubeadm_ver=$(kubeadm version -o short 2>/dev/null) || kubeadm_ver="N/A"
 
     echo -e "\n${GREEN}==============================================================${NC}"
     Write-Log SUCCESS "Kubernetes control plane ready!"
     echo -e "${GREEN}==============================================================${NC}\n"
     echo -e "${BLUE}kubeadm:${NC}      ${GREEN}${kubeadm_ver}${NC}"
-    echo -e "${BLUE}kubeconfig:${NC}   ${GREEN}${target_home}/.kube/config${NC}"
+    echo -e "${BLUE}API URL:${NC}      ${GREEN}https://${endpoint}${NC}"
+    echo -e "${BLUE}kubeconfig:${NC}   ${GREEN}${kube_home}/.kube/config${NC}"
     echo -e "${BLUE}Log:${NC}          ${GREEN}${LOG_FILE}${NC}"
     echo ""
-    echo -e "${BOLD}Join a worker (run on CN2)${NC}"
-    echo -e "  sudo ./install-k8s.sh --worker --join \"${join_line}\""
+    echo -e "${BOLD}Join a worker (run on each worker node; token valid 24h)${NC}"
+    echo -e "  sudo ./${SCRIPT_NAME} --worker --url ${endpoint} \\"
+    echo -e "      --token ${join_token} \\"
+    echo -e "      --ca-cert-hash ${ca_hash}"
     echo ""
-    echo -e "${YELLOW}AWS:${NC} allow node-to-node traffic in the security group (self-referencing"
-    echo -e "     'All traffic' rule), plus TCP 30000 inbound for the app NodePort."
+    echo -e "${BOLD}Use kubectl${NC}"
+    echo -e "  kubectl get nodes"
+    echo ""
+    echo -e "${YELLOW}Cloud/firewall:${NC} nodes must reach each other on TCP 6443, TCP 10250 and"
+    echo -e "     UDP 8472 (on AWS: a self-referencing 'All traffic' security group rule),"
+    echo -e "     plus inbound on any NodePort you expose (30000-32767)."
 }
 
-# Usage: Install-Worker [kubeadm-join-command]
+# Usage: Install-Worker <endpoint> <token> <ca-cert-hash>
 Install-Worker() {
-    local join_cmd=$1
+    local endpoint=$1 join_token=$2 ca_hash=$3
+
+    [[ -n "$endpoint"   ]] || Stop-Script "Worker needs --url <control-plane-ip>:6443"
+    [[ -n "$join_token" ]] || Stop-Script "Worker needs --token <token from the control plane>"
+    [[ -n "$ca_hash"    ]] || Stop-Script "Worker needs --ca-cert-hash sha256:<hash from the control plane>"
+    endpoint=${endpoint#https://}
+    endpoint=${endpoint%/}
+    [[ "$endpoint" == *:* ]] || endpoint="${endpoint}:6443"
+    [[ "$endpoint" =~ ^[A-Za-z0-9.-]+:[0-9]+$ ]] || Stop-Script "The --url value should look like 10.0.0.1:6443."
+    [[ "$join_token" =~ ^[a-z0-9]{6}\.[a-z0-9]{16}$ ]] || Stop-Script "The --token value should look like abcdef.0123456789abcdef."
+    [[ "$ca_hash" =~ ^sha256:[a-f0-9]{64}$ ]] || Stop-Script "The --ca-cert-hash value should look like sha256:<64 hex chars>."
+
+    # Fail fast, before installing anything, when the API port is unreachable
+    # (on AWS: security group). /livez is readable without credentials.
+    Write-Log INFO "Checking that https://${endpoint} is reachable..."
+    curl -ksf --max-time 5 "https://${endpoint}/livez" 2>/dev/null | grep -q ok || \
+        Stop-Script "Cannot reach https://${endpoint}/livez. Check the URL, that the control plane is up, and that the security group allows TCP 6443 from this node."
+
     Initialize-Node
 
-    local msg
-    if [[ -n "$join_cmd" ]]; then
-        Write-Log STEP "Joining the cluster"
-        # shellcheck disable=SC2086  # the join command is a full command line
-        Invoke-Cmd $join_cmd
-        msg="Worker joined the cluster."
-    else
-        msg="Node prepared. Run the 'kubeadm join ...' line from the control plane (or re-run with --join)."
-    fi
+    # kubeadm join only returns after the kubelet's TLS bootstrap succeeded,
+    # so a zero exit means the node registered. Not using Invoke-Cmd: it would
+    # print the token.
+    Write-Log STEP "Joining the cluster at ${endpoint}"
+    kubeadm join "$endpoint" --token "$join_token" --discovery-token-ca-cert-hash "$ca_hash" >> "$LOG_FILE" 2>&1 || \
+        Stop-Script "kubeadm join failed. Check log: $LOG_FILE (expired token? reset with 'sudo kubeadm reset -f' before retrying)"
+    systemctl is-active --quiet kubelet || \
+        Write-Log WARN "kubelet is not active; inspect: journalctl -u kubelet -n 50"
+
+    local kubeadm_ver
+    kubeadm_ver=$(kubeadm version -o short 2>/dev/null) || kubeadm_ver="N/A"
 
     echo -e "\n${GREEN}==============================================================${NC}"
-    Write-Log SUCCESS "$msg"
+    Write-Log SUCCESS "Kubernetes worker joined!"
     echo -e "${GREEN}==============================================================${NC}\n"
+    echo -e "${BLUE}kubeadm:${NC}      ${GREEN}${kubeadm_ver}${NC}"
+    echo -e "${BLUE}Joined:${NC}       ${GREEN}https://${endpoint}${NC}"
     echo -e "${BLUE}Log:${NC}          ${GREEN}${LOG_FILE}${NC}"
     echo ""
-    echo -e "${BOLD}Verify on the control plane (CN1)${NC}"
-    echo -e "  kubectl get node"
+    echo -e "${BOLD}Verify on the control plane${NC}"
+    echo -e "  kubectl get nodes        # this node turns Ready once Flannel runs on it"
+    echo ""
+    echo -e "${YELLOW}Note:${NC} kubectl does not work on a worker (no kubeconfig here, so it"
+    echo -e "      falls back to localhost:8080). Manage the cluster from the control plane."
 }
 
 # ============================================================================
@@ -282,7 +352,9 @@ Install-Worker() {
 # ============================================================================
 
 ROLE=""
-JOIN_CMD=""
+SERVER_URL=""
+JOIN_VALUE=""
+CA_HASH=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -290,9 +362,17 @@ while [[ $# -gt 0 ]]; do
             ROLE="control-plane"; shift ;;
         --worker)
             ROLE="worker"; shift ;;
-        --join)
-            JOIN_CMD=${2:-}
-            [[ -n "$JOIN_CMD" ]] || Stop-Script "--join requires a value"
+        --url)
+            SERVER_URL=${2:-}
+            [[ -n "$SERVER_URL" ]] || Stop-Script "--url requires a value"
+            shift 2 ;;
+        --token)
+            JOIN_VALUE=${2:-}
+            [[ -n "$JOIN_VALUE" ]] || Stop-Script "--token requires a value"
+            shift 2 ;;
+        --ca-cert-hash)
+            CA_HASH=${2:-}
+            [[ -n "$CA_HASH" ]] || Stop-Script "--ca-cert-hash requires a value"
             shift 2 ;;
         -h|--help)
             Show-Usage; exit 0 ;;
@@ -302,9 +382,21 @@ while [[ $# -gt 0 ]]; do
 done
 
 Test-Root
+[[ -d /run/systemd/system ]] || Stop-Script "kubeadm requires a systemd-based system."
+
+case "$(Get-OsId)" in
+    ubuntu|debian) : ;;
+    *) Stop-Script "This script targets Ubuntu/Debian. Detected: $(Get-OsId). Use the K3s installer instead." ;;
+esac
+
+if [[ -f /etc/kubernetes/admin.conf || -f /etc/kubernetes/kubelet.conf ]]; then
+    Write-Log WARN "This node is already part of a Kubernetes cluster."
+    Write-Log INFO "Remove it first: sudo kubeadm reset -f && sudo rm -rf /etc/cni/net.d \$HOME/.kube/config"
+    exit 0
+fi
 
 case "$ROLE" in
     control-plane) Install-ControlPlane ;;
-    worker)        Install-Worker "$JOIN_CMD" ;;
+    worker)        Install-Worker "$SERVER_URL" "$JOIN_VALUE" "$CA_HASH" ;;
     *)             Show-Usage; Stop-Script "Pass --control-plane or --worker." ;;
 esac
