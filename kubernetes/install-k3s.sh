@@ -117,6 +117,10 @@ Roles:
   --control-plane   Install the first K3s node (control plane)
   --worker          Join this node to an existing cluster as a worker
 
+Options (control plane):
+  --dual-stack      Enable IPv4 + IPv6 pod and service networking. K3s only
+                    accepts this when the cluster is first created.
+
 Options (worker):
   --url HOST[:PORT] Control-plane API endpoint; port defaults to 6443
                     (an https:// prefix is accepted)
@@ -141,6 +145,11 @@ LOG_FILE="/tmp/k3s_install_$(date +%Y%m%d_%H%M%S).log"
 # Pinned K3s release (Renovate-managed). get.k3s.io reads INSTALL_K3S_VERSION.
 K3S_VERSION="${K3S_VERSION:-v1.37.0+k3s1}"
 
+# Set by --dual-stack. Pod/service ranges: IPv4 defaults plus private (ULA) IPv6.
+DUAL_STACK=0
+CLUSTER_CIDR="10.42.0.0/16,fd42:cafe:42::/56"
+SERVICE_CIDR="10.43.0.0/16,fd42:cafe:43::/112"
+
 # === Commands ===
 
 # Usage: Install-ControlPlane
@@ -155,6 +164,11 @@ Install-ControlPlane() {
     if [[ -n "$kube_user" && "$kube_user" != root ]]; then
         kube_group=$(id -gn "$kube_user")
         server_args+=(--write-kubeconfig-mode 0640 --write-kubeconfig-group "$kube_group")
+    fi
+
+    if (( DUAL_STACK )); then
+        Write-Log INFO "Enabling dual-stack (IPv4 + IPv6) networking"
+        server_args+=(--cluster-cidr="$CLUSTER_CIDR" --service-cidr="$SERVICE_CIDR" --flannel-ipv6-masq)
     fi
 
     # get.k3s.io is Rancher's official install path; it is a remote script.
@@ -285,6 +299,8 @@ while [[ $# -gt 0 ]]; do
             ROLE="control-plane"; shift ;;
         --worker)
             ROLE="worker"; shift ;;
+        --dual-stack)
+            DUAL_STACK=1; shift ;;
         --url)
             SERVER_URL=${2:-}
             [[ -n "$SERVER_URL" ]] || Stop-Script "--url requires a value"
@@ -299,6 +315,9 @@ while [[ $# -gt 0 ]]; do
             Write-Log ERROR "Unknown argument: $1"; Show-Usage; exit 1 ;;
     esac
 done
+
+(( ! DUAL_STACK )) || [[ "$ROLE" == control-plane ]] || \
+    Stop-Script "--dual-stack only applies to --control-plane."
 
 Test-Root
 [[ -d /run/systemd/system ]] || Stop-Script "K3s requires a systemd-based system."

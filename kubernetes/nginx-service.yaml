@@ -6,6 +6,7 @@ spec:
   selector:
     app: quoterxp
   type: NodePort
+  ipFamilyPolicy: PreferDualStack
   ports:
   - protocol: TCP
     port: 5000

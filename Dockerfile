@@ -24,4 +24,4 @@ COPY /content/. /app/
 # EXPOSE 5000
 
 # Run the webserver
-CMD ["/root/.local/bin/poetry", "run", "flask", "run", "-h", "0.0.0.0"]
+CMD ["/root/.local/bin/poetry", "run", "flask", "run", "-h", "::"]
