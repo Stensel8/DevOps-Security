@@ -54,6 +54,25 @@ Voor het pull-secret van het cluster heb ik een apart Docker Hub-token gemaakt m
 ![Docker Hub-token met alleen lezen](docs/images/docker-token-read-only.png)
 ![GitHub-secret voor het pull-token](docs/images/github-secret-pull-pat.png)
 
+Daarna heb ik de Docker Hub-repository op Private gezet. Het cluster kan het image nog steeds ophalen: als ik de pod verwijder, maakt de Deployment een nieuwe pod die het image met `regcred` pullt en op `Running` komt.
+
+![Repository op Private zetten](docs/images/dockerhub-private.png)
+
+```
+$ kubectl get secret regcred
+NAME      TYPE                             DATA   AGE
+regcred   kubernetes.io/dockerconfigjson   1      5m15s
+$ kubectl delete pod -l app=quoterxp
+pod "student-devsecops-64fd5b7554-8p6hk" deleted from default namespace
+$ kubectl get pods
+NAME                                 READY   STATUS    RESTARTS   AGE
+student-devsecops-64fd5b7554-dzd64   1/1     Running   0          38s
+```
+
+Voor de security group heb ik alleen de poorten open gelaten die K3s nodig heeft, volgens de [K3s-documentatie](https://docs.k3s.io/installation/requirements). Tussen de nodes zijn dat TCP 6443 (de worker meldt zich bij de API van CN1), UDP 8472 (Flannel VXLAN, het pod-netwerk) en TCP 10250 (de kubelet), met de security group zelf als bron. Poorten 2379-2380, 51820/51821 en 5001 zijn niet nodig, want ik gebruik geen HA, geen WireGuard en geen Spegel. Verder staan SSH (22) en de app (NodePort 30000) alleen open voor mijn eigen IPv4- en IPv6-adres. HTTP, HTTPS en de regel voor al het verkeer binnen de groep heb ik verwijderd. Mijn IP-adressen zijn in de screenshot afgedekt.
+
+![Inbound rules van de security group](docs/images/aws-sg-minimale-poorten.png)
+
 ### 1.2 Standaarden: ISO 27001, ISO 27002, NIS2 en CIS
 
 ISO 27001 is een norm voor een informatiebeveiligingsmanagementsysteem (ISMS) met 93 maatregelen, en ISO 27002 is de richtlijn daarbij. NIS2 is een EU-wet met verplichte maatregelen en een meldplicht; in Nederland is dat de Cyberbeveiligingswet. De CIS Controls zijn 18 concrete, geprioriteerde controls voor de technische kant.
