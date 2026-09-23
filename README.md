@@ -88,6 +88,8 @@ curl -4 http://<dns-van-de-node>:30000
 curl -6 "http://[<ipv6-van-de-node>]:30000"
 ```
 
+Om te laten zien dat een codewijziging automatisch wordt uitgerold, heb ik de titel van de app meerdere keren aangepast in `quoter_templates.py` en weer teruggezet ([`de36b32`](https://github.com/Stensel8/DevOps-Security/commit/de36b32), [`ccb61ec`](https://github.com/Stensel8/DevOps-Security/commit/ccb61ec) en [`cb9e32c`](https://github.com/Stensel8/DevOps-Security/commit/cb9e32c)). Na elke commit draaien Validate, Build, Test en Deploy, en de pagina op poort 30000 verandert live. Zie de [screencast](docs/video/live-uitrol.webm) (10 minuten, AV1).
+
 ### 1.2 Standaarden: ISO 27001, ISO 27002, NIS2 en CIS
 
 ISO 27001 is een norm voor een informatiebeveiligingsmanagementsysteem (ISMS) met 93 maatregelen, en ISO 27002 is de richtlijn daarbij. NIS2 is een EU-wet met verplichte maatregelen en een meldplicht; in Nederland is dat de Cyberbeveiligingswet. De CIS Controls zijn 18 concrete, geprioriteerde controls voor de technische kant.
