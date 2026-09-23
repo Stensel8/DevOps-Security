@@ -19,6 +19,10 @@ In het AWS Learner Lab heb ik twee instances gemaakt: Ubuntu Server 26.04 LTS, `
 ![Key pair](docs/images/ec2-keypair.png)
 ![Opslag en aantal](docs/images/ec2-storage-2-instances.png)
 
+Ik gebruik daarnaast IPv6: beide instances hebben naast hun IPv4-adres ook een IPv6-adres.
+
+![CN1 en CN2 draaien](docs/images/ec2-instances.png)
+
 Ik verbind via het DNS-adres, werk de machines bij en zet de hostnames.
 
 ```bash
@@ -72,6 +76,17 @@ student-devsecops-64fd5b7554-dzd64   1/1     Running   0          38s
 Voor de security group heb ik alleen de poorten open gelaten die K3s nodig heeft, volgens de [K3s-documentatie](https://docs.k3s.io/installation/requirements). Tussen de nodes zijn dat TCP 6443 (de worker meldt zich bij de API van CN1), UDP 8472 (Flannel VXLAN, het pod-netwerk) en TCP 10250 (de kubelet), met de security group zelf als bron. Poorten 2379-2380, 51820/51821 en 5001 zijn niet nodig, want ik gebruik geen HA, geen WireGuard en geen Spegel. Verder staan SSH (22) en de app (NodePort 30000) alleen open voor mijn eigen IPv4- en IPv6-adres. HTTP, HTTPS en de regel voor al het verkeer binnen de groep heb ik verwijderd. Mijn IP-adressen zijn in de screenshot afgedekt.
 
 ![Inbound rules van de security group](docs/images/aws-sg-minimale-poorten.png)
+
+Voor IPv6 heb ik in commit [`b67d2b9`](https://github.com/Stensel8/DevOps-Security/commit/b67d2b92c71dee64aab7515fa307ab8d0a59b20d) drie dingen aangepast: het K3s-script kreeg een `--dual-stack` optie, de Service kreeg `ipFamilyPolicy: PreferDualStack` en de app luistert op `::` in plaats van `0.0.0.0`, dus op IPv4 én IPv6. K3s accepteert dual-stack alleen bij het aanmaken van het cluster, dus heb ik K3s opnieuw geïnstalleerd met `sudo ./install-k3s.sh --control-plane --dual-stack` en daarna de Deploy opnieuw gedraaid. Een push start de pipeline die het image met de nieuwe Dockerfile bouwt.
+
+![Pipeline na de push](docs/images/pipeline-run.png)
+
+De app antwoordt nu op poort 30000 via zowel IPv4 als IPv6, op beide nodes:
+
+```bash
+curl -4 http://<dns-van-de-node>:30000
+curl -6 "http://[<ipv6-van-de-node>]:30000"
+```
 
 ### 1.2 Standaarden: ISO 27001, ISO 27002, NIS2 en CIS
 
