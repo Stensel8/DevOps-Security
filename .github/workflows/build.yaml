@@ -104,7 +104,22 @@ jobs:
     steps:
       - name: Checkout source code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      # Pull-secret voor het cluster, gemaakt uit GitHub-secrets: het token staat dus niet
+      # in een bestand of in de shell-history op CN1. Het is een apart alleen-lezen token.
+      - name: Create image pull secret
+        env:
+          DOCKERHUB_LOGIN: ${{ secrets.DOCKERHUB_LOGIN }}
+          DOCKER_HUB_PULL_PAT: ${{ secrets.DOCKER_HUB_PULL_PAT }}
+        run: |
+          : "${DOCKER_HUB_PULL_PAT:?secret DOCKER_HUB_PULL_PAT ontbreekt}"
+          kubectl create secret docker-registry regcred \
+            --docker-server=https://index.docker.io/v1/ \
+            --docker-username="$DOCKERHUB_LOGIN" \
+            --docker-password="$DOCKER_HUB_PULL_PAT" \
+            --dry-run=client -o yaml | kubectl apply -f -
+
       - run: |
-              sudo kubectl delete deployment --all
-              sudo kubectl apply -f ${{ github.workspace }}/kubernetes/deployment.yaml --force
-              sudo kubectl apply -f ${{ github.workspace }}/kubernetes/nginx-service.yaml --force
+              kubectl delete deployment --all
+              kubectl apply -f ${{ github.workspace }}/kubernetes/deployment.yaml --force
+              kubectl apply -f ${{ github.workspace }}/kubernetes/nginx-service.yaml --force
