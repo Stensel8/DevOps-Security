@@ -43,33 +43,25 @@ def index():
 # The quote comments page
 @app.route("/quotes/<int:quote_id>")
 def get_comments_page(quote_id):
-    # OPZETTELIJK KWETSBAAR (Demo): SQL Injection
-    # De quote_id gaat rechtstreeks in de SQL query. Een aanvaller kan iets als
-    # /quotes/1 UNION SELECT ... gebruiken en zomaar alle data stelen.
-    quote = db.execute(f"select id, text, attribution from quotes where id={quote_id}").fetchone()
-    comments = db.execute(f"select text, datetime(time,'localtime') as time, name as user_name from comments c left join users u on u.id=c.user_id where quote_id={quote_id} order by c.id").fetchall()
+    quote = db.execute("select id, text, attribution from quotes where id=?", (quote_id,)).fetchone()
+    comments = db.execute("select text, datetime(time,'localtime') as time, name as user_name from comments c left join users u on u.id=c.user_id where quote_id=? order by c.id", (quote_id,)).fetchall()
     return templates.comments_page(quote, comments, request.user_id)
 
 
 # Post a new quote
 @app.route("/quotes", methods=["POST"])
 def post_quote():
-    # OPZETTELIJK KWETSBAAR (Demo): SQL Injection in formulier
-    # Gebruiker kan SQL-code in de text-veld zetten, bijvoorbeeld: "; DROP TABLE quotes; --
-    # Hiermee kan de hele database verwijderd worden. Slecht idee!
     with db:
-        db.execute(f"""insert into quotes(text,attribution) values("{request.form['text']}","{request.form['attribution']}")""")
+        db.execute("insert into quotes(text,attribution) values(?,?)", (request.form['text'], request.form['attribution']))
     return redirect("/#bottom")
 
 
 # Post a new comment
 @app.route("/quotes/<int:quote_id>/comments", methods=["POST"])
 def post_comment(quote_id):
-    # OPZETTELIJK KWETSBAAR (Demo): SQL Injection + JavaScript in HTML
-    # 1. Comment gaat rechtstreeks in SQL. 2. Commentaar wordt zonder escaping in HTML gezet.
-    # Aanvaller kan JavaScript injecteren die in elke bezoeker's browser wordt uitgevoerd.
+    # OPZETTELIJK KWETSBAAR (Demo): commentaar wordt zonder escaping in HTML gezet (zie quoter_templates.py).
     with db:
-        db.execute(f"""insert into comments(text,quote_id,user_id) values("{request.form['text']}",{quote_id},{request.user_id})""")
+        db.execute("insert into comments(text,quote_id,user_id) values(?,?,?)", (request.form['text'], quote_id, request.user_id))
     return redirect(f"/quotes/{quote_id}#bottom")
 
 
@@ -79,9 +71,7 @@ def signin():
     username = request.form["username"].lower()
     password = request.form["password"]
 
-    # OPZETTELIJK KWETSBAAR (Demo): SQL Injection in login
-    # Gebruikersnaam gaat rechtstreeks in SQL. Type ' OR '1'='1 en je bent ingelogd.
-    user = db.execute(f"select id, password from users where name='{username}'").fetchone()
+    user = db.execute("select id, password from users where name=?", (username,)).fetchone()
     if user: # user exists
         # OPZETTELIJK KWETSBAAR (Demo): Wachtwoord staat zomaar in de database
         # Gewoon plaintext, geen hashing. Bij een hack zijn alle wachtwoorden zichtbaar.
@@ -91,10 +81,8 @@ def signin():
         user_id = user['id']
     else: # new sign up
         with db:
-            # OPZETTELIJK KWETSBAAR (Demo): SQL Injection + plaintext wachtwoord
-            # Gebruikersnaam en wachtwoord gaan beide rechtstreeks in SQL.
-            # Wachtwoord wordt niet gehasht. Aanvallers kunnen zomaar accounts hack.
-            cursor = db.execute(f"insert into users(name,password) values('{username}', '{password}')")
+            # OPZETTELIJK KWETSBAAR (Demo): wachtwoord wordt niet gehasht.
+            cursor = db.execute("insert into users(name,password) values(?,?)", (username, password))
             user_id = cursor.lastrowid
 
     # OPZETTELIJK KWETSBAAR (Demo): Cookie is niet beveiligd
