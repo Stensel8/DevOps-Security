@@ -250,11 +250,23 @@ Ik heb de omgevingsvariabele weggehaald. De app gebruikt nu `/data` als die map 
 
 Dit heb ik opnieuw getest in Docker met dezelfde beperkingen (read-only, geen capabilities) en ook met een gewone `docker run` zonder `/data`. In beide gevallen werkt de app.
 
+### Fix 7: wachtwoorden niet meer in het logbestand
+
+De app schreef bij elk verzoek alles wat er in een formulier stond in het logbestand, dus ook de wachtwoorden bij het inloggen. Wie het logbestand kon lezen, zag dus de wachtwoorden. Nu logt de app alleen nog de methode en het pad. Zie de diff van commit [`9355c96`](https://github.com/Stensel8/DevOps-Security/commit/9355c96):
+
+```diff
+@@ content/app.py:34 @@
+-    log_file.write(f"{request.method} {request.path} {dict(request.form) if request.form else ''}\n")
++    log_file.write(f"{request.method} {request.path}\n")
+```
+
+Getest: na twee keer inloggen met een wachtwoord staat er alleen `POST /signin` in het logbestand.
+
 ### Wat nog open staat
 
 De `Secure`-vlag op de cookie (CodeQL en Snyk) heb ik niet gezet. Die werkt alleen met HTTPS. De app draait op gewone HTTP, en dan slaat een browser de cookie niet op, dus dan kan ik niet meer inloggen. Daarom heb ik de melding in GitHub gesloten als "won't fix", met die reden erbij.
 
-Ook de andere kwetsbaarheden laat ik staan: de `user_id` in de cookie is niet ondertekend, wachtwoorden staan in platte tekst en in het logbestand.
+Verder zijn er nog een paar dingen die scanners niet melden, maar die wel kwetsbaar zijn. Wachtwoorden staan in platte tekst in de database, de `user_id` in de cookie is niet ondertekend en `app.static_folder = '.'` zorgt dat bestanden zoals de database en `app.py` via `/static/` te downloaden zijn. In de code staat bij die eerste twee "Nog niet opgelost". De comments bij wat wel is opgelost zeggen "Opgelost in week 2, tijdens commit ...".
 
 ## 2.3 Advies: veilig ontwikkelen in Plan en Code
 
