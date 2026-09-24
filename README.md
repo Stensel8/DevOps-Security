@@ -6,7 +6,7 @@
 [![CI/CD](https://github.com/Stensel8/DevOps-Security/actions/workflows/build.yaml/badge.svg)](https://github.com/Stensel8/DevOps-Security/actions/workflows/build.yaml)
 [![CodeQL](https://github.com/Stensel8/DevOps-Security/actions/workflows/dynamic/github-code-scanning/codeql/badge.svg)](https://github.com/Stensel8/DevOps-Security/security/code-scanning)
 
-Een Flask-app (Quoter XP) waar bewust kwetsbaarheden in zitten, met een pipeline van GitHub Actions naar Docker Hub en een K3s-cluster op AWS. Het idee is om dit helemaal aan te passen en te gaan beveiligen.
+Mijn uitwerking van de casus. De basis is een Flask-app (Quoter XP) met bewust ingebouwde kwetsbaarheden, een pipeline van GitHub Actions naar Docker Hub en een K3s-cluster op AWS. Die beveilig ik stap voor stap.
 
 - [Casus](case/README.md)
 - [Week 1](week-1/README.md): bootomgeving, standaarden en CVE's

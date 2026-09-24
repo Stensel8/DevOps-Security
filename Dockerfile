@@ -14,7 +14,7 @@ RUN pip install --no-cache-dir poetry==2.5.1
 
 # Uit jouw repo, naar /app in de builder: alleen de lijst met dependencies, niet de code.
 # Zolang die twee bestanden gelijk blijven, hergebruikt Docker de installatie uit de cache.
-COPY content/pyproject.toml content/poetry.lock ./
+COPY app/pyproject.toml app/poetry.lock ./
 
 # Poetry maakt de venv in /app/.venv (zonder pip) en installeert alleen de dependencies uit poetry.lock
 RUN poetry config virtualenvs.in-project true \
@@ -29,9 +29,9 @@ RUN PIP_ROOT_USER_ACTION=ignore pip uninstall -y pip
 
 ENV PATH="/app/.venv/bin:$PATH" PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
 
-# Uit jouw repo, naar /app in dit image: de app zelf (content/). Van gebruiker 10001, want SQLite en het
+# Uit jouw repo, naar /app in dit image: de app zelf (app/). Van gebruiker 10001, want SQLite en het
 # logbestand schrijven in de app-map.
-COPY --chown=10001:10001 content/ /app/
+COPY --chown=10001:10001 app/ /app/
 # Uit de builder (--from=builder), naar dit image: de venv met de dependencies. Het enige dat we uit de
 # builder meenemen. Poetry en pip blijven daar.
 COPY --from=builder --chown=10001:10001 /app/.venv /app/.venv

@@ -1,4 +1,4 @@
-![Saxion](saxion-logo.avif) ![SolidApps](solidapps-logo.avif)
+<img src="saxion-logo.avif" alt="Saxion" height="80"> <img src="solidapps-logo.avif" alt="SolidApps" height="80">
 
 # Casus SolidApps.
 

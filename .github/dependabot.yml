@@ -6,11 +6,11 @@ version: 2
 
 updates:
   # ---------------------------------------------------------------
-  # Python (Poetry) - pyproject.toml + poetry.lock staan in /content
+  # Python (Poetry) - pyproject.toml + poetry.lock staan in /app
   # LET OP: het ecosystem heet "pip", niet "python". Poetry valt eronder.
   # ---------------------------------------------------------------
   - package-ecosystem: "pip"
-    directory: "/content"
+    directory: "/app"
     schedule:
       interval: "weekly"
       day: "monday"

@@ -3,7 +3,7 @@ __pycache__/
 *.py[cod]
 
 # Runtime output van de applicatie
-content/access.log
+app/access.log
 
 # macOS
 .DS_Store

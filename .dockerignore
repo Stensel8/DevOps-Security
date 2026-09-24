@@ -1,5 +1,5 @@
 *
-!content
-content/__pycache__
-content/.venv
-content/access.log
+!app
+app/__pycache__
+app/.venv
+app/access.log

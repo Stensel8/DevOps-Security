@@ -32,11 +32,11 @@ jobs:
         run: pipx install poetry==2.5.1
 
       - name: Check pyproject.toml and poetry.lock are in sync
-        working-directory: content
+        working-directory: app
         run: poetry check --lock
 
       - name: Byte-compile the application
-        run: python -m compileall content
+        run: python -m compileall app
 
   build:
     name: Build
