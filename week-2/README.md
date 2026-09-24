@@ -232,6 +232,24 @@ Zie de diffs van commit [`b3d10f5`](https://github.com/Stensel8/DevOps-Security/
 
 Ik heb dit getest in een K3s van dezelfde versie als mijn cluster (draaiend in Docker). De pod komt op `Running`, blijft `Ready` zonder herstarts en de liveness probe slaagt. In de pod zie ik dat alle capabilities weg zijn, dat schrijven naar `/app` niet kan (`Read-only file system`) en dat inloggen en quotes plaatsen nog werkt. Trivy vond op het manifest 19 punten voor de aanpassing en nog 3 erna: het `:latest`-tag, de default namespace en de vertrouwde registry.
 
+Toen ik de Snyk-extensie opnieuw draaide, vond die nog 5 punten. Vier daarvan kwamen door mijn eigen wijziging. Snyk ziet een omgevingsvariabele (`DATA_DIR`) als onbetrouwbare invoer. Die komt terecht in het pad van de database en het logbestand, en dat gaf 2 keer XSS (Medium) en 2 keer Path Traversal (Low). Het vijfde punt is de `Secure`-vlag op de cookie, die ik niet zet.
+
+![Snyk na fix 6](images/snyk-na-fix-6.png)
+
+Ik heb de omgevingsvariabele weggehaald. De app gebruikt nu `/data` als die map bestaat en anders de map naast de code, en de `env` in de Deployment is weg. Zie de diff van commit [`19d558f`](https://github.com/Stensel8/DevOps-Security/commit/19d558f):
+
+```diff
+@@ content/app.py:19 @@
+-DATA_DIR = os.environ.get("DATA_DIR", ".")
++DATA_DIR = "/data" if os.path.isdir("/data") else "."
+@@ kubernetes/deployment.yaml:27 (weggehaald) @@
+-        env:
+-          - name: DATA_DIR
+-            value: /data
+```
+
+Dit heb ik opnieuw getest in Docker met dezelfde beperkingen (read-only, geen capabilities) en ook met een gewone `docker run` zonder `/data`. In beide gevallen werkt de app.
+
 ### Wat nog open staat
 
 De `Secure`-vlag op de cookie (CodeQL en Snyk) heb ik niet gezet. Die werkt alleen met HTTPS. De app draait op gewone HTTP, en dan slaat een browser de cookie niet op, dus dan kan ik niet meer inloggen. Daarom heb ik de melding in GitHub gesloten als "won't fix", met die reden erbij.
