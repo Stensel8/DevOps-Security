@@ -39,4 +39,8 @@ COPY --from=builder --chown=10001:10001 /app/.venv /app/.venv
 WORKDIR /app
 USER 10001:10001
 
-ENTRYPOINT ["python", "-m", "flask", "run", "--host", "::"]
+# Gunicorn is een echte webserver voor productie. Flask's eigen server (flask run) is alleen voor ontwikkelen.
+# --worker-tmp-dir: gunicorn heeft een schrijfbare map voor zijn werkbestanden nodig. Het bestandssysteem is
+# read-only, dus we gebruiken /dev/shm (werkgeheugen), dat is altijd schrijfbaar. De control-socket van gunicorn
+# (voor beheer op afstand) hebben we niet nodig en zou ook naar het read-only bestandssysteem schrijven.
+ENTRYPOINT ["gunicorn", "--bind", "[::]:5000", "--worker-tmp-dir", "/dev/shm", "--no-control-socket", "app:app"]
