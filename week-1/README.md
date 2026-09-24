@@ -84,9 +84,11 @@ curl -4 http://<dns-van-de-node>:30000
 curl -6 "http://[<ipv6-van-de-node>]:30000"
 ```
 
-In de casus heet de Service `ngnix-service` (met een typfout), maar er draait helemaal geen nginx. Het doorsturen van poort 30000 naar poort 5000 in de pod doet kube-proxy, dat in K3s zit. Daarom heb ik het bestand hernoemd naar `kubernetes/service.yaml` (commit [`080731a`](https://github.com/Stensel8/DevOps-Security/commit/080731a)). Daarna heb ik de Service en de Deployment (`student-devsecops`) dezelfde naam gegeven als de repo en het image: `devops-security` (commit [`827ee98`](https://github.com/Stensel8/DevOps-Security/commit/827ee98)).
+In de casus heet de Service `ngnix-service` (met een typfout), maar er draait helemaal geen nginx. Het doorsturen van poort 30000 naar poort 5000 in de pod doet kube-proxy, dat in K3s zit. Daarom heb ik het bestand hernoemd naar `kubernetes/service.yaml` en de Service `quoterxp-service` genoemd (commit [`080731a`](https://github.com/Stensel8/DevOps-Security/commit/080731a)). Daarna heb ik de Service en de Deployment (`student-devsecops`) dezelfde naam gegeven als de repo en het image: `devops-security` (commit [`827ee98`](https://github.com/Stensel8/DevOps-Security/commit/827ee98)).
 
-Kubernetes kan een resource niet hernoemen, dus de pipeline maakt de nieuwe aan en haalt de oude weg. De oude Service moet eerst weg, want de nieuwe gebruikt dezelfde nodePort 30000 en anders geeft Kubernetes `provided port is already allocated`. De oude Deployment haalt de pipeline pas weg als de nieuwe werkt, zodat er tot die tijd een terugval is. Ik heb dit getest met de echte deploy-stap op K3s v1.37.0 in Docker, vanuit de oude situatie. Poort 30000 antwoordde ongeveer een seconde niet, en één verzoek mislukte toen de oude pod stopte. Een tweede run deed niets extra. Met een kapot image draaide de pipeline terug en faalde de job, zonder dat er een verzoek mislukte.
+Kubernetes kan een resource niet hernoemen, dus de pipeline maakt de nieuwe aan en haalt de oude weg. De oude Service moet eerst weg, want de nieuwe gebruikt dezelfde nodePort 30000 en anders geeft Kubernetes `provided port is already allocated`. Dat gebeurde ook echt: in eerste instantie haalde de pipeline alleen `ngnix-service` weg, maar op het cluster stond na de eerste hernoeming al `quoterxp-service`. Dat heb ik gerepareerd in commit [`8a96ae6`](https://github.com/Stensel8/DevOps-Security/commit/8a96ae6). De oude Deployment haalt de pipeline pas weg als de nieuwe werkt, zodat er tot die tijd een terugval is.
+
+Ik heb dit getest met de echte deploy-stap op K3s v1.37.0 in Docker, vanuit de staat waarin mijn cluster stond (`student-devsecops` en `quoterxp-service`). Poort 30000 antwoordde ongeveer een seconde niet, en één verzoek mislukte toen de oude pod stopte. Een tweede run deed niets extra. Met een kapot image draaide de pipeline terug en faalde de job, zonder dat er een verzoek mislukte.
 
 ```diff
 @@ kubernetes/deployment.yaml:4 @@
@@ -97,7 +99,7 @@ Kubernetes kan een resource niet hernoemen, dus de pipeline maakt de nieuwe aan 
 +  name: devops-security
 @@ .github/workflows/build.yaml:169-170 @@
 -          kubectl apply -f kubernetes/nginx-service.yaml
-+          kubectl delete service ngnix-service --ignore-not-found
++          kubectl delete service ngnix-service quoterxp-service --ignore-not-found
 +          kubectl apply -f kubernetes/service.yaml
 @@ .github/workflows/build.yaml:187 @@
 +          kubectl delete deployment student-devsecops --ignore-not-found
