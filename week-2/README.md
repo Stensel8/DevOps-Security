@@ -49,7 +49,7 @@ Voor de fixes stonden er 10 open meldingen in Code scanning (CodeQL): 6 keer SQL
 
 ![Security vulnerabilities voor de fixes](images/codeql-voor-de-fixes.png)
 
-Ik heb ze in vijf stappen aangepakt, en daarna ook de punten van Snyk IaC (fix 6). Bij fix 1, 2, 4 en 5 heb ik een eigen commit gemaakt, zodat je de diff los kunt bekijken. De diffs hieronder heb ik ingekort tot alleen de code die veranderd is, met bestand en regelnummer erbij. De weggehaalde commentaarregels laat ik weg. De hele diff staat in de commit.
+Ik heb ze in vijf stappen aangepakt, en daarna ook de punten van Snyk IaC (fix 6) en een paar dingen die scanners niet melden (fix 7 t/m 10). Bij fix 1, 2, 4 en 5 heb ik een eigen commit gemaakt, zodat je de diff los kunt bekijken. De diffs hieronder heb ik ingekort tot alleen de code die veranderd is, met bestand en regelnummer erbij. De weggehaalde commentaarregels laat ik weg. De hele diff staat in de commit.
 
 ### Fix 1: SQL-injectie
 
@@ -137,7 +137,7 @@ Poetry heb ik ook vastgepind (`poetry==2.5.1`, in de Dockerfile en in de workflo
 
 ### Fix 4: cookie met HttpOnly en SameSite
 
-De `user_id`-cookie had geen `HttpOnly`. Dan kan JavaScript op de pagina hem lezen, bijvoorbeeld via een XSS. Met `httponly=True` kan alleen de browser hem nog gebruiken, en met `samesite='Lax'` wordt hij niet meegestuurd bij verzoeken vanaf andere websites. CodeQL en Snyk melden dit allebei.
+De `user_id`-cookie had geen `HttpOnly`. Dan kan JavaScript op de pagina hem lezen, bijvoorbeeld via een XSS. Met `httponly=True` kan alleen de browser hem nog gebruiken, en met `samesite='Lax'` wordt hij niet meegestuurd bij verzoeken vanaf andere websites. CodeQL en Snyk melden dit allebei. Later heb ik de losse cookie vervangen door een sessie (fix 10), maar dit was de eerste oplossing.
 
 Zie de diff van commit [`3dfae64`](https://github.com/Stensel8/DevOps-Security/commit/3dfae64):
 
@@ -262,11 +262,77 @@ De app schreef bij elk verzoek alles wat er in een formulier stond in het logbes
 
 Getest: na twee keer inloggen met een wachtwoord staat er alleen `POST /signin` in het logbestand.
 
+### Fix 8: alleen static/ publiek maken
+
+Met `app.static_folder = '.'` was de hele app-map publiek via `/static/`. Daardoor kon iedereen de database (met alle gebruikers) en `app.py` downloaden, bijvoorbeeld via `/static/db.sqlite3`. Geen scanner meldde dit, maar ik zag het bij het testen. Nu staat `style.css` in de map `static/`, en dat is het enige wat geserveerd wordt. Zie de diff van commit [`e217cf4`](https://github.com/Stensel8/DevOps-Security/commit/e217cf4) (`style.css` is verplaatst naar `content/static/`):
+
+```diff
+@@ content/app.py:9 (weggehaald) @@
+-app.static_folder = '.'
+```
+
+Getest: `/static/style.css` geeft 200 en `/static/db.sqlite3`, `/static/app.py` en `/static/poetry.lock` geven 404, ook als ik `../` in het pad probeer.
+
+### Fix 9: wachtwoorden hashen
+
+Wachtwoorden stonden in platte tekst in de database. Wie bij de database kwam, zag ze allemaal. Nu sla ik ze op als hash (scrypt, met `werkzeug.security`, dat zit al in Flask). Bij het inloggen kijkt `check_password_hash` of het wachtwoord klopt. De twee gebruikers die al in de database stonden (`test` en `frank`, uit het sjabloon van de docent) heb ik ook omgezet naar een hash, dus `db.sqlite3` staat ook in de commit. Zie de diff van commit [`6a929c6`](https://github.com/Stensel8/DevOps-Security/commit/6a929c6):
+
+```diff
+@@ content/app.py:2 @@
++from werkzeug.security import check_password_hash, generate_password_hash
+@@ content/app.py:84 @@
+-        if password != user['password']:
++        if not check_password_hash(user['password'], password):
+@@ content/app.py:90 @@
+-            cursor = db.execute("insert into users(name,password) values(?,?)", (username, password))
++            cursor = db.execute("insert into users(name,password) values(?,?)", (username, generate_password_hash(password)))
+@@ content/quoter_templates.py:102 @@
+-    <p class="warn">WARNING!!: This is a demo site and passwords are stored in plain text. Do not use passwords you may be using on other services.</p>
++    <p class="warn">WARNING!!: This is a demo site. Do not use passwords you may be using on other services.</p>
+```
+
+Getest: inloggen als `test` met `1234` werkt nog, een fout wachtwoord niet, een nieuwe gebruiker krijgt meteen een hash en er staat geen platte tekst meer in de database.
+
+### Fix 10: ondertekende sessie in plaats van een losse cookie
+
+De app zette een cookie met alleen `user_id=1`. Die kon je zelf aanpassen, dus je kon zonder wachtwoord inloggen als een andere gebruiker. Nu gebruik ik de sessie van Flask. Die cookie is ondertekend met een willekeurige sleutel, dus een aangepaste of verzonnen cookie wordt niet geaccepteerd. De sleutel verandert bij elke start van de app, dus na een herstart moet je opnieuw inloggen. Dat is hier prima, want er draait maar één pod. De sessie-cookie heeft `HttpOnly` standaard en `SameSite=Lax` heb ik ingesteld, dus dit neemt fix 4 over. Zie de diff van commit [`f2aef79`](https://github.com/Stensel8/DevOps-Security/commit/f2aef79):
+
+```diff
+@@ content/app.py:1 @@
+-from flask import Flask, request, redirect, make_response, url_for
++from flask import Flask, request, redirect, session, url_for
+@@ content/app.py:4 @@
++import secrets
+@@ content/app.py:12-13 @@
++app.secret_key = secrets.token_hex(32)
++app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+@@ content/app.py:42 @@
+-    if 'user_id' in request.cookies:
+-        request.user_id = int(request.cookies['user_id'])
+-    else:
+-        request.user_id = None
++    request.user_id = session.get("user_id")
+@@ content/app.py:93-94 @@
+-    response = make_response(redirect('/'))
+-    response.set_cookie('user_id', str(user_id), httponly=True, samesite='Lax')
+-    return response
++    session["user_id"] = user_id
++    return redirect('/')
+@@ content/app.py:100-101 @@
+-    response = make_response(redirect('/'))
+-    response.delete_cookie('user_id')
+-    return response
++    session.clear()
++    return redirect('/')
+```
+
+Getest: inloggen en uitloggen werken. Een zelf gemaakte `user_id=1`-cookie, een aangepaste sessie-cookie en een sessie-cookie die met een andere sleutel is ondertekend worden alle drie niet geaccepteerd.
+
 ### Wat nog open staat
 
-De `Secure`-vlag op de cookie (CodeQL en Snyk) heb ik niet gezet. Die werkt alleen met HTTPS. De app draait op gewone HTTP, en dan slaat een browser de cookie niet op, dus dan kan ik niet meer inloggen. Daarom heb ik de melding in GitHub gesloten als "won't fix", met die reden erbij.
+De `Secure`-vlag op de cookie heb ik niet gezet. Die werkt alleen met HTTPS, en de app draait op gewone HTTP. Een browser slaat een `Secure`-cookie niet op via HTTP, dus dan kan ik niet meer inloggen. In GitHub heb ik de melding gesloten als "won't fix", met die reden erbij. Sinds fix 10 gebruik ik een sessie-cookie en staat er geen `set_cookie` meer in de code, dus CodeQL meldt het niet meer. De cookie heeft de `Secure`-vlag nog steeds niet. Zodra er HTTPS is, bijvoorbeeld met de Ingress met certificaat uit week 5, kan ik `SESSION_COOKIE_SECURE` aanzetten.
 
-Verder zijn er nog een paar dingen die scanners niet melden, maar die wel kwetsbaar zijn. Wachtwoorden staan in platte tekst in de database, de `user_id` in de cookie is niet ondertekend en `app.static_folder = '.'` zorgt dat bestanden zoals de database en `app.py` via `/static/` te downloaden zijn. In de code staat bij die eerste twee "Nog niet opgelost". De comments bij wat wel is opgelost zeggen "Opgelost in week 2, tijdens commit ...".
+Alle andere kwetsbaarheden die scanners of ik hebben gevonden zijn opgelost. In de code staat bij elk daarvan "Opgelost in week 2, tijdens commit ...". De app is daarmee niet helemaal veilig. Er is bijvoorbeeld geen CSRF-bescherming en geen limiet op het aantal inlogpogingen.
 
 ## 2.3 Advies: veilig ontwikkelen in Plan en Code
 
