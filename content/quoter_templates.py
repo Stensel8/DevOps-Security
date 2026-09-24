@@ -1,6 +1,10 @@
+# De HTML van de pagina's. Alles wat een gebruiker invult gaat door escape(): tekens als < en > worden
+# gewone tekst, dus ingevulde HTML of JavaScript wordt niet uitgevoerd (XSS). Vroeger werd de invoer
+# zo in de HTML gezet. Opgelost in week 2, tijdens commit 251f107.
 from markupsafe import escape
 
 
+# Eén quote (tekst en wie het zei).
 def quote_fragment(id, text, attribution):
     return f"""
 <a href="/quotes/{id}" class="quote img{id % 13}">
@@ -11,6 +15,7 @@ def quote_fragment(id, text, attribution):
 
 
 
+# Eén commentaar met de naam van de schrijver.
 def comment_fragment(text,user_name,time):
   time_html = f"<time>{time}</time>" if time else ""
   return f"""
@@ -25,6 +30,7 @@ def comment_fragment(text,user_name,time):
 
 
 
+# De hoofdpagina met alle quotes.
 def main_page(quotes,user_id,error):
   quotes = [quote_fragment(q['id'], q['text'], q['attribution']) for q in quotes]
   content = f"<main>{''.join(quotes)}</main>"
@@ -32,6 +38,7 @@ def main_page(quotes,user_id,error):
 
 
 
+# De pagina van één quote, met de commentaren en (als je bent ingelogd) een formulier om te reageren.
 def comments_page(quote,comments,user_id):
     post_html = ''
     if user_id:
@@ -54,6 +61,7 @@ def comments_page(quote,comments,user_id):
 
 
 
+# Het HTML-kader om elke pagina: kop, het formulier om een quote toe te voegen en het inlogformulier.
 def page(content,user_id,title,error=None):
 
     if user_id:
