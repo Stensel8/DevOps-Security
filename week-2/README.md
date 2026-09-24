@@ -61,11 +61,10 @@ Ik heb dit opgelost met geparametriseerde queries: de SQL-tekst staat vast en de
 
 Zie de diff van commit [`4965429`](https://github.com/Stensel8/DevOps-Security/commit/4965429):
 
+`content/app.py`
+
 ```diff
---- a/content/app.py
-+++ b/content/app.py
-@@ -44,9 +44,6 @@ def index():
- @app.route("/quotes/<int:quote_id>")
+@@ -45,7 +45,4 @@ def index():
  def get_comments_page(quote_id):
 -    # OPZETTELIJK KWETSBAAR (Demo): SQL Injection
 -    # De quote_id gaat rechtstreeks in de SQL query. Een aanvaller kan iets als
@@ -75,9 +74,7 @@ Zie de diff van commit [`4965429`](https://github.com/Stensel8/DevOps-Security/c
 +    quote = db.execute("select id, text, attribution from quotes where id=?", (quote_id,)).fetchone()
 +    comments = db.execute("select text, datetime(time,'localtime') as time, name as user_name from comments c left join users u on u.id=c.user_id where quote_id=? order by c.id", (quote_id,)).fetchall()
      return templates.comments_page(quote, comments, request.user_id)
- 
-@@ -55,9 +52,6 @@ def get_comments_page(quote_id):
- @app.route("/quotes", methods=["POST"])
+@@ -56,7 +53,4 @@ def get_comments_page(quote_id):
  def post_quote():
 -    # OPZETTELIJK KWETSBAAR (Demo): SQL Injection in formulier
 -    # Gebruiker kan SQL-code in de text-veld zetten, bijvoorbeeld: "; DROP TABLE quotes; --
@@ -86,9 +83,7 @@ Zie de diff van commit [`4965429`](https://github.com/Stensel8/DevOps-Security/c
 -        db.execute(f"""insert into quotes(text,attribution) values("{request.form['text']}","{request.form['attribution']}")""")
 +        db.execute("insert into quotes(text,attribution) values(?,?)", (request.form['text'], request.form['attribution']))
      return redirect("/#bottom")
- 
-@@ -66,9 +60,7 @@ def post_quote():
- @app.route("/quotes/<int:quote_id>/comments", methods=["POST"])
+@@ -67,7 +61,5 @@ def post_quote():
  def post_comment(quote_id):
 -    # OPZETTELIJK KWETSBAAR (Demo): SQL Injection + JavaScript in HTML
 -    # 1. Comment gaat rechtstreeks in SQL. 2. Commentaar wordt zonder escaping in HTML gezet.
@@ -98,18 +93,14 @@ Zie de diff van commit [`4965429`](https://github.com/Stensel8/DevOps-Security/c
 -        db.execute(f"""insert into comments(text,quote_id,user_id) values("{request.form['text']}",{quote_id},{request.user_id})""")
 +        db.execute("insert into comments(text,quote_id,user_id) values(?,?,?)", (request.form['text'], quote_id, request.user_id))
      return redirect(f"/quotes/{quote_id}#bottom")
- 
-@@ -80,7 +72,5 @@ def signin():
-     password = request.form["password"]
+@@ -81,5 +73,3 @@ def signin():
  
 -    # OPZETTELIJK KWETSBAAR (Demo): SQL Injection in login
 -    # Gebruikersnaam gaat rechtstreeks in SQL. Type ' OR '1'='1 en je bent ingelogd.
 -    user = db.execute(f"select id, password from users where name='{username}'").fetchone()
 +    user = db.execute("select id, password from users where name=?", (username,)).fetchone()
      if user: # user exists
-         # OPZETTELIJK KWETSBAAR (Demo): Wachtwoord staat zomaar in de database
-@@ -92,8 +82,6 @@ def signin():
-     else: # new sign up
+@@ -93,6 +83,4 @@ def signin():
          with db:
 -            # OPZETTELIJK KWETSBAAR (Demo): SQL Injection + plaintext wachtwoord
 -            # Gebruikersnaam en wachtwoord gaan beide rechtstreeks in SQL.
@@ -118,7 +109,6 @@ Zie de diff van commit [`4965429`](https://github.com/Stensel8/DevOps-Security/c
 +            # OPZETTELIJK KWETSBAAR (Demo): wachtwoord wordt niet gehasht.
 +            cursor = db.execute("insert into users(name,password) values(?,?)", (username, password))
              user_id = cursor.lastrowid
- 
 ```
 
 Getest op het gebouwde image: de gebruikersnaam-aanval maakt nu een gewoon nieuw account met een rare naam in plaats van in te loggen als gebruiker 1, en een quote met `"; DROP TABLE quotes; --` staat letterlijk op de pagina met de tabel intact.
@@ -133,62 +123,43 @@ Snyk vindt alleen de variant via de `error`-parameter en stelt voor alleen die p
 
 Zie de diff van commit [`251f107`](https://github.com/Stensel8/DevOps-Security/commit/251f107):
 
+`content/app.py`
+
 ```diff
---- a/content/app.py
-+++ b/content/app.py
-@@ -60,5 +60,4 @@ def post_quote():
- @app.route("/quotes/<int:quote_id>/comments", methods=["POST"])
+@@ -61,3 +61,2 @@ def post_quote():
  def post_comment(quote_id):
 -    # OPZETTELIJK KWETSBAAR (Demo): commentaar wordt zonder escaping in HTML gezet (zie quoter_templates.py).
      with db:
-         db.execute("insert into comments(text,quote_id,user_id) values(?,?,?)", (request.form['text'], quote_id, request.user_id))
---- a/content/quoter_templates.py
-+++ b/content/quoter_templates.py
-@@ -1,7 +1,10 @@
+```
+
+`content/quoter_templates.py`
+
+```diff
+@@ -0,0 +1,3 @@
 +from markupsafe import escape
 +
 +
- def quote_fragment(id, text, attribution):
-     return f"""
- <a href="/quotes/{id}" class="quote img{id % 13}">
+@@ -4,2 +7,2 @@ def quote_fragment(id, text, attribution):
 -  <q>{text}</q>
 -  <address>{attribution}</address>
 +  <q>{escape(text)}</q>
 +  <address>{escape(attribution)}</address>
- </a>
- """
-@@ -10,15 +13,12 @@ def quote_fragment(id, text, attribution):
- 
- def comment_fragment(text,user_name,time):
+@@ -12,3 +14,0 @@ def comment_fragment(text,user_name,time):
 -  # OPZETTELIJK KWETSBAAR (Demo): JavaScript injecteren in comments
 -  # Gebruiker kan JavaScript schrijven in comment. Bijvoorbeeld: <img src=x onerror="alert('hacked')">
 -  # Dit voert JavaScript uit in iedereen's browser die het comment ziet.
-   time_html = f"<time>{time}</time>" if time else ""
-   return f"""
- <section class="comment">
-   <aside>
+@@ -19 +19 @@ def comment_fragment(text,user_name,time):
 -    <address>{user_name}</address>
 +    <address>{escape(user_name)}</address>
- {time_html}
-   </aside>
+@@ -22 +22 @@ def comment_fragment(text,user_name,time):
 -  <p>{text}</p>
 +  <p>{escape(text)}</p>
- </section>
- """
-@@ -70,5 +70,5 @@ def page(content,user_id,title,error=None):
- <html lang="en-US">
- <head>
+@@ -72 +72 @@ def page(content,user_id,title,error=None):
 -  <title>{title or "Quoter XP"}</title>
 +  <title>{escape(title or "Quoter XP")}</title>
-   <meta charset="utf-8">
-   <link rel="stylesheet" type="text/css" href="/static/style.css">
-@@ -101,5 +101,5 @@ def page(content,user_id,title,error=None):
-   <form action="/signin" method="post">
-     <p class="warn">WARNING!!: This site is intentionally insecure. Do not use passwords you may be using on other services.</p>
+@@ -103 +103 @@ def page(content,user_id,title,error=None):
 -    {f"<div class=error>{error}</div>" if error else ""}
 +    {f"<div class=error>{escape(error)}</div>" if error else ""}
-     <h3>Username</h3>
-     <input type="text" name="username">
 ```
 
 Getest op het gebouwde image: `<img src=x onerror=alert(1)>` staat nu als gewone tekst op de pagina, ook via `?error=`, een quote, een attributie en een gebruikersnaam.
@@ -215,9 +186,9 @@ Nog niet vastgepind zijn `stensel8/devops-security:latest` in de Deployment en `
 
 De `user_id`-cookie had geen `HttpOnly`, dus JavaScript op de pagina kon hem lezen, bijvoorbeeld via een XSS. Met `httponly=True` kan alleen de browser hem nog versturen, en `samesite='Lax'` zorgt dat hij niet meegaat bij verzoeken vanaf andere sites. CodeQL en Snyk melden dit allebei. Zie de diff van commit [`3dfae64`](https://github.com/Stensel8/DevOps-Security/commit/3dfae64):
 
+`content/app.py`
+
 ```diff
---- a/content/app.py
-+++ b/content/app.py
 @@ -90,3 +90,3 @@ def signin():
      response = make_response(redirect('/'))
 -    response.set_cookie('user_id', str(user_id))
@@ -229,18 +200,15 @@ De `user_id`-cookie had geen `HttpOnly`, dus JavaScript op de pagina kon hem lez
 
 CodeQL meldt een URL-redirect omdat `quote_id` uit de URL komt en in de redirect terechtkomt. Door `<int:quote_id>` was dit in de praktijk lastig te misbruiken, maar `url_for` is het veiligere patroon: de URL wordt uit de route van de app zelf gebouwd in plaats van uit tekst die ik aan elkaar plak. Zie de diff van commit [`2a2e85f`](https://github.com/Stensel8/DevOps-Security/commit/2a2e85f):
 
+`content/app.py`
+
 ```diff
---- a/content/app.py
-+++ b/content/app.py
-@@ -1,2 +1,2 @@
+@@ -1 +1 @@
 -from flask import Flask, request, redirect, make_response
 +from flask import Flask, request, redirect, make_response, url_for
- import sqlite3
-@@ -63,3 +63,3 @@ def post_comment(quote_id):
-         db.execute("insert into comments(text,quote_id,user_id) values(?,?,?)", (request.form['text'], quote_id, request.user_id))
+@@ -64 +64 @@ def post_comment(quote_id):
 -    return redirect(f"/quotes/{quote_id}#bottom")
 +    return redirect(url_for("get_comments_page", quote_id=quote_id, _anchor="bottom"))
- 
 ```
 
 Vooraf heb ik de CodeQL CLI lokaal gedraaid: op de originele code kreeg ik dezelfde 10 meldingen als op GitHub, na de fixes nog 1.
