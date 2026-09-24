@@ -12,7 +12,7 @@ dependencies = [
     # Voor de gelekte-versie van de opdracht: draai ze terug naar de originele versies
     # (flask >=3.1.3, gunicorn >=26.2.0 en de twee extra regels weg).
     "flask (>=3.0.3,<3.1.0)",
-    "werkzeug (>=3.0.3,<3.0.6)",
+    "werkzeug (>=3.1.8,<3.1.9)",
     "jinja2 (>=3.1.4,<3.1.5)",
     "gunicorn (>=21.2.0,<22.0.0)",
 ]
