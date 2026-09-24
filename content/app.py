@@ -1,6 +1,7 @@
-from flask import Flask, request, redirect, make_response, url_for
+from flask import Flask, request, redirect, session, url_for
 from werkzeug.security import check_password_hash, generate_password_hash
 import os
+import secrets
 import shutil
 import sqlite3
 import urllib
@@ -8,6 +9,8 @@ import quoter_templates as templates
 
 # Run using `poetry install && poetry run flask run --reload`
 app = Flask(__name__)
+app.secret_key = secrets.token_hex(32)
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 
 # Open the database. Have queries return dicts instead of tuples.
 # The use of `check_same_thread` can cause unexpected results in rare cases. We'll
@@ -36,10 +39,7 @@ def log_request():
 # Set user_id on request if user is logged in, or else set it to None.
 @app.before_request
 def check_authentication():
-    if 'user_id' in request.cookies:
-        request.user_id = int(request.cookies['user_id'])
-    else:
-        request.user_id = None
+    request.user_id = session.get("user_id")
 
 
 # The main page
@@ -90,17 +90,12 @@ def signin():
             cursor = db.execute("insert into users(name,password) values(?,?)", (username, generate_password_hash(password)))
             user_id = cursor.lastrowid
 
-    # HttpOnly en SameSite: opgelost in week 2, tijdens commit 3dfae64.
-    # Nog niet opgelost: de user_id in de cookie is niet ondertekend, dus je kunt hem zelf veranderen
-    # naar bijvoorbeeld 1 en dan ben je die andere gebruiker.
-    response = make_response(redirect('/'))
-    response.set_cookie('user_id', str(user_id), httponly=True, samesite='Lax')
-    return response
+    session["user_id"] = user_id
+    return redirect('/')
 
 
 # Sign out user
 @app.route("/signout", methods=["GET"])
 def signout():
-    response = make_response(redirect('/'))
-    response.delete_cookie('user_id')
-    return response
+    session.clear()
+    return redirect('/')
