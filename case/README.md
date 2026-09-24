@@ -1,4 +1,4 @@
-![Saxion](saxion-logo.jpg) ![SolidApps](solidapps-logo.png)
+![Saxion](saxion-logo.avif) ![SolidApps](solidapps-logo.avif)
 
 # Casus SolidApps.
 
