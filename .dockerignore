@@ -1,0 +1,5 @@
+*
+!content
+content/__pycache__
+content/.venv
+content/access.log
