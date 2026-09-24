@@ -1,4 +1,4 @@
-from flask import Flask, request, redirect, make_response
+from flask import Flask, request, redirect, make_response, url_for
 import sqlite3
 import urllib
 import quoter_templates as templates
@@ -61,7 +61,7 @@ def post_quote():
 def post_comment(quote_id):
     with db:
         db.execute("insert into comments(text,quote_id,user_id) values(?,?,?)", (request.form['text'], quote_id, request.user_id))
-    return redirect(f"/quotes/{quote_id}#bottom")
+    return redirect(url_for("get_comments_page", quote_id=quote_id, _anchor="bottom"))
 
 
 # Sign in user
