@@ -51,6 +51,19 @@
       ],
       "depNameTemplate": "flannel-io/flannel",
       "datasourceTemplate": "github-releases"
+    },
+    {
+      "customType": "regex",
+      "description": "Poetry version in the Dockerfile and the workflow",
+      "managerFilePatterns": [
+        "/^Dockerfile$/",
+        "/^\\.github/workflows/build\\.yaml$/"
+      ],
+      "matchStrings": [
+        "poetry==(?<currentValue>[0-9][0-9.]*)"
+      ],
+      "depNameTemplate": "poetry",
+      "datasourceTemplate": "pypi"
     }
   ]
 }
