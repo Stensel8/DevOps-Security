@@ -80,6 +80,8 @@ Buiten de opdracht heb ik nog drie kleine dingen aangepast. De app draait onder 
 
 <img src="images/securityheaders-na.png" alt="securityheaders.com: A" width="720">
 
+<img src="images/securityheaders-headers.png" alt="securityheaders.com: alle headers die de app stuurt" width="720">
+
 De achtergrondfoto's kwamen van `cdn.glitch.com`, maar dat domein bestaat niet meer. Ik heb ze teruggezocht op Unsplash en host ze nu zelf in `static/img/` ([`28dcc30`](https://github.com/Stensel8/DevOps-Security/commit/28dcc30)), dus de CSP hoeft geen ander domein toe te staan.
 
 De screenshot van Docker Scout hierboven is van vóór gunicorn. Trivy geeft op het huidige image 0 kwetsbaarheden.
