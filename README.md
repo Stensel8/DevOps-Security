@@ -2,7 +2,6 @@
 
 [![Docker Hub](https://img.shields.io/badge/Docker%20Hub-stensel8%2Fdevops--security-2496ED?logo=docker&logoColor=white)](https://hub.docker.com/r/stensel8/devops-security)
 [![Image size](https://img.shields.io/docker/image-size/stensel8/devops-security/latest?label=image&logo=docker&logoColor=white)](https://hub.docker.com/r/stensel8/devops-security)
-[![Docker Scout](https://img.shields.io/badge/Docker%20Scout-0%20CVE's-brightgreen?logo=docker&logoColor=white)](week-3/README.md#alle-kwetsbaarheden-fixen)
 [![CI/CD](https://github.com/Stensel8/DevOps-Security/actions/workflows/build.yaml/badge.svg)](https://github.com/Stensel8/DevOps-Security/actions/workflows/build.yaml)
 [![CodeQL](https://github.com/Stensel8/DevOps-Security/actions/workflows/dynamic/github-code-scanning/codeql/badge.svg)](https://github.com/Stensel8/DevOps-Security/security/code-scanning)
 
