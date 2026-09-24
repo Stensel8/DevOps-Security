@@ -12,7 +12,8 @@ app.static_folder = '.'
 # Open the database. Have queries return dicts instead of tuples.
 # The use of `check_same_thread` can cause unexpected results in rare cases. We'll
 # get rid of this when we learn about SQLAlchemy.
-# DEMO: Dit is een opzettelijke beveiligingskwetsbaarheid voor educatieve doeleinden.
+# De SQL-injectie die hier zat is opgelost in week 2, tijdens commit 4965429.
+
 # De database en het logbestand staan in /data als die map er is. In Kubernetes is dat een aparte
 # schrijfbare map, want de rest van het bestandssysteem is read-only. De eerste keer krijgt die map
 # de database uit het image. Zonder /data staan ze naast de code.
@@ -28,9 +29,7 @@ db.row_factory = sqlite3.Row
 log_file = open(os.path.join(DATA_DIR, 'access.log'), 'a', buffering=1)
 @app.before_request
 def log_request():
-    # OPZETTELIJK KWETSBAAR (Demo): We loggen alles, inclusief wachtwoorden
-    # Dit is slecht. Als iemand toegang tot de logbestanden heeft, kunnen ze alle
-    # wachtwoorden van ingelogde gebruikers zien. In echte applicaties: nooit doen!
+    # Opgelost in week 2, tijdens commit 9355c96: hier stonden ook de wachtwoorden in het logbestand.
     log_file.write(f"{request.method} {request.path}\n")
 
 
@@ -82,21 +81,20 @@ def signin():
 
     user = db.execute("select id, password from users where name=?", (username,)).fetchone()
     if user: # user exists
-        # OPZETTELIJK KWETSBAAR (Demo): Wachtwoord staat zomaar in de database
-        # Gewoon plaintext, geen hashing. Bij een hack zijn alle wachtwoorden zichtbaar.
+        # Nog niet opgelost: het wachtwoord staat in platte tekst in de database (geen hashing).
         if password != user['password']:
             # wrong! redirect to main page with an error message
             return redirect('/?error='+urllib.parse.quote("Invalid password!"))
         user_id = user['id']
     else: # new sign up
         with db:
-            # OPZETTELIJK KWETSBAAR (Demo): wachtwoord wordt niet gehasht.
+            # Nog niet opgelost: het wachtwoord wordt niet gehasht.
             cursor = db.execute("insert into users(name,password) values(?,?)", (username, password))
             user_id = cursor.lastrowid
 
-    # OPZETTELIJK KWETSBAAR (Demo): Cookie is niet beveiligd
-    # User ID staat zomaar in de cookie. Aanvaller kan de cookie veranderen naar user_id=1
-    # en is ingelogd als die andere persoon. Geen beveiliging.
+    # HttpOnly en SameSite: opgelost in week 2, tijdens commit 3dfae64.
+    # Nog niet opgelost: de user_id in de cookie is niet ondertekend, dus je kunt hem zelf veranderen
+    # naar bijvoorbeeld 1 en dan ben je die andere gebruiker.
     response = make_response(redirect('/'))
     response.set_cookie('user_id', str(user_id), httponly=True, samesite='Lax')
     return response
