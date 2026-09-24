@@ -59,7 +59,6 @@ def post_quote():
 # Post a new comment
 @app.route("/quotes/<int:quote_id>/comments", methods=["POST"])
 def post_comment(quote_id):
-    # OPZETTELIJK KWETSBAAR (Demo): commentaar wordt zonder escaping in HTML gezet (zie quoter_templates.py).
     with db:
         db.execute("insert into comments(text,quote_id,user_id) values(?,?,?)", (request.form['text'], quote_id, request.user_id))
     return redirect(f"/quotes/{quote_id}#bottom")
