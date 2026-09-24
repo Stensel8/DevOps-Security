@@ -164,24 +164,15 @@ jobs:
           }
 
           sed "s|stensel8/devops-security:latest|${IMAGE}|" kubernetes/deployment.yaml | kubectl apply -f -
-          # De Service heette eerst ngnix-service (typfout uit de casus, en er draait geen nginx) en daarna quoterxp-service.
-          # De nieuwe Service gebruikt dezelfde nodePort 30000, dus de oude moet eerst weg. Bestaan ze niet meer, dan doet dit niets.
-          kubectl delete service ngnix-service quoterxp-service --ignore-not-found
           kubectl apply -f kubernetes/service.yaml
 
           kubectl rollout status deployment/devops-security --timeout=120s || rollback
 
-          ok=false
           for _ in $(seq 1 15); do
             if curl --fail --silent --output /dev/null http://localhost:30000; then
-              ok=true
-              break
+              echo "De nieuwe versie draait en antwoordt via de Service."
+              exit 0
             fi
             sleep 2
           done
-          $ok || rollback
-          echo "De nieuwe versie draait en antwoordt via de Service."
-
-          # De Deployment heette eerst student-devsecops en is hernoemd naar de naam van de repo. De oude halen we pas
-          # weg als de nieuwe bewezen werkt, zodat er tot die tijd een terugval is. Bestaat hij niet meer, dan doet dit niets.
-          kubectl delete deployment student-devsecops --ignore-not-found
+          rollback
