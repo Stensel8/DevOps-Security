@@ -105,6 +105,20 @@ Ik heb dit getest met de echte deploy-stap op K3s v1.37.0 in Docker, vanuit de s
 +          kubectl delete deployment student-devsecops --ignore-not-found
 ```
 
+Na de push was de migratie klaar. Er draait alleen nog `devops-security`, en de oude Deployment en Services zijn weg:
+
+```
+$ kubectl get pods
+NAME                              READY   STATUS    RESTARTS   AGE
+devops-security-bd5f4c658-ftzzv   1/1     Running   0          31s
+$ kubectl get services
+NAME              TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)          AGE
+devops-security   NodePort    10.43.166.211   <none>        5000:30000/TCP   51s
+kubernetes        ClusterIP   10.43.0.1       <none>        443/TCP          16h
+```
+
+Omdat alles gemigreerd is, heb ik die opruimcode weer weggehaald uit de deploy-stap (commit [`cc6df65`](https://github.com/Stensel8/DevOps-Security/commit/cc6df65)). De stap is daardoor weer even eenvoudig als voorheen.
+
 Om te laten zien dat een wijziging in de code vanzelf op het cluster komt, heb ik een paar keer de titel van de app aangepast in `quoter_templates.py` en weer teruggezet ([`de36b32`](https://github.com/Stensel8/DevOps-Security/commit/de36b32), [`ccb61ec`](https://github.com/Stensel8/DevOps-Security/commit/ccb61ec) en [`cb9e32c`](https://github.com/Stensel8/DevOps-Security/commit/cb9e32c)). Na elke commit lopen Validate, Build, Test en Deploy, en de pagina op poort 30000 verandert live. Zie de [screencast](video/live-uitrol.webm) (10 minuten).
 
 ### De pipeline
