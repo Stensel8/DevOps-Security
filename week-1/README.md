@@ -84,6 +84,18 @@ curl -4 http://<dns-van-de-node>:30000
 curl -6 "http://[<ipv6-van-de-node>]:30000"
 ```
 
+In de casus heet de Service `ngnix-service` (met een typfout), maar er draait helemaal geen nginx. Het doorsturen van poort 30000 naar poort 5000 in de pod doet kube-proxy, dat in K3s zit. Daarom heb ik het bestand hernoemd naar `kubernetes/service.yaml` en de Service naar `quoterxp-service` (commit [`080731a`](https://github.com/Stensel8/DevOps-Security/commit/080731a)). De nieuwe Service gebruikt dezelfde nodePort 30000, dus de oude moet eerst weg, anders geeft Kubernetes `provided port is already allocated`. Dat doet de deploy-stap nu met `kubectl delete service ngnix-service --ignore-not-found`. Ik heb dat getest op K3s v1.37.0 in Docker: poort 30000 is na het vervangen binnen ongeveer een seconde weer bereikbaar.
+
+```diff
+@@ kubernetes/service.yaml:4 @@
+-  name: ngnix-service
++  name: quoterxp-service
+@@ .github/workflows/build.yaml:167 @@
+-          kubectl apply -f kubernetes/nginx-service.yaml
++          kubectl delete service ngnix-service --ignore-not-found
++          kubectl apply -f kubernetes/service.yaml
+```
+
 Om te laten zien dat een wijziging in de code vanzelf op het cluster komt, heb ik een paar keer de titel van de app aangepast in `quoter_templates.py` en weer teruggezet ([`de36b32`](https://github.com/Stensel8/DevOps-Security/commit/de36b32), [`ccb61ec`](https://github.com/Stensel8/DevOps-Security/commit/ccb61ec) en [`cb9e32c`](https://github.com/Stensel8/DevOps-Security/commit/cb9e32c)). Na elke commit lopen Validate, Build, Test en Deploy, en de pagina op poort 30000 verandert live. Zie de [screencast](video/live-uitrol.webm) (10 minuten).
 
 ### De pipeline
