@@ -1,5 +1,33 @@
 # Week 3
 
+## 3.1 SBOM
+
+Een SBOM (Software Bill of Materials) is een lijst van alle onderdelen in een image. Per onderdeel staat erin wat het is, welke versie, welk type (bijvoorbeeld `apk` of `pypi`), de licentie en een vaste naam (`purl`). Dat staat in een standaardformaat zoals CycloneDX of SPDX, zodat een scanner het kan lezen. Een scanner vergelijkt die lijst met databases van bekende kwetsbaarheden. Komt er een nieuwe CVE bij, dan zie je met de SBOM meteen welke images het package bevatten.
+
+Ik heb met Trivy een SBOM in CycloneDX gemaakt van het image zoals het was (commit `790a9b8^`, Debian met Poetry) en van het huidige image:
+
+```
+$ trivy image --format cyclonedx --output sbom.cdx.json <image>
+
+# oud (Debian, Poetry in het image)
+library-componenten: 272  (deb: 126, pypi: 146)
+# nu (Alpine, alleen de runtime)
+library-componenten: 38   (apk: 30, pypi: 8)
+```
+
+Door de andere basisimage en de multi-stage build (zie 3.2) zitten er nog 38 onderdelen in plaats van 272. Van Python zijn het alleen nog de 8 packages die de app nodig heeft: Flask, Werkzeug, Jinja2, MarkupSafe, itsdangerous, click, blinker en gunicorn. De hele SBOM staat in [sbom/devops-security.cdx.json](sbom/devops-security.cdx.json). Zo ziet één onderdeel eruit:
+
+```json
+{
+  "name": "Flask",
+  "version": "3.1.3",
+  "purl": "pkg:pypi/flask@3.1.3",
+  "licenses": [{ "license": { "id": "BSD-3-Clause" } }]
+}
+```
+
+In de pipeline staat nu ook `sbom: true` bij de build-stap. Dan maakt Docker bij elke build een SBOM en zet die als attestation bij het image op Docker Hub.
+
 ## 3.2 Docker Scout
 
 Het image in de beginstaat is kwetsbaar. Docker Scout laat 96 kwetsbaarheden zien, waarvan 3 Critical en 21 High. Het meeste zit in de basisimage (`python:3-slim-bookworm`: 3 Critical, 15 High). Mijn eigen lagen hebben ook 9 High, door `apt-get install pipx`.

@@ -72,6 +72,8 @@ jobs:
           file: ./Dockerfile
           target: runtime
           push: ${{ github.ref == 'refs/heads/main' }}
+          # Zet een SBOM (lijst met alle packages) als attestation bij het image op Docker Hub.
+          sbom: true
           tags: |
             stensel8/devops-security:latest
             stensel8/devops-security:${{ github.sha }}
