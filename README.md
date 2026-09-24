@@ -2,7 +2,7 @@
 
 [![Docker Hub](https://img.shields.io/badge/Docker%20Hub-stensel8%2Fdevops--security-2496ED?logo=docker&logoColor=white)](https://hub.docker.com/r/stensel8/devops-security)
 
-Een Flask-app (Quoter XP) die in het begin bewust kwetsbaar was, met een pipeline van GitHub Actions naar Docker Hub en een K3s-cluster op AWS.
+Een Flask-app (Quoter XP) waar bewust kwetsbaarheden in zitten, met een pipeline van GitHub Actions naar Docker Hub en een K3s-cluster op AWS. Het idee is om dit helemaal aan te passen en te gaan beveiligen.
 
 - [Casus](case/README.md)
 - [Week 1](week-1/README.md): bootomgeving, standaarden en CVE's
