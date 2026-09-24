@@ -159,7 +159,7 @@ jobs:
             kubectl get pods -l app=quoterxp -o wide >&2 || true
             kubectl logs -l app=quoterxp --tail=20 --prefix >&2 || true
             echo "Terugdraaien naar de vorige versie." >&2
-            kubectl rollout undo deployment/student-devsecops >&2 || true
+            kubectl rollout undo deployment/devops-security >&2 || true
             exit 1
           }
 
@@ -169,13 +169,19 @@ jobs:
           kubectl delete service ngnix-service --ignore-not-found
           kubectl apply -f kubernetes/service.yaml
 
-          kubectl rollout status deployment/student-devsecops --timeout=120s || rollback
+          kubectl rollout status deployment/devops-security --timeout=120s || rollback
 
+          ok=false
           for _ in $(seq 1 15); do
             if curl --fail --silent --output /dev/null http://localhost:30000; then
-              echo "De nieuwe versie draait en antwoordt via de Service."
-              exit 0
+              ok=true
+              break
             fi
             sleep 2
           done
-          rollback
+          $ok || rollback
+          echo "De nieuwe versie draait en antwoordt via de Service."
+
+          # De Deployment heette eerst student-devsecops en is hernoemd naar de naam van de repo. De oude halen we pas
+          # weg als de nieuwe bewezen werkt, zodat er tot die tijd een terugval is. Bestaat hij niet meer, dan doet dit niets.
+          kubectl delete deployment student-devsecops --ignore-not-found

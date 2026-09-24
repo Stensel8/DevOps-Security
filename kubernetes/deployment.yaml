@@ -1,7 +1,7 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: student-devsecops
+  name: devops-security
   labels:
     app: quoterxp
 spec:
