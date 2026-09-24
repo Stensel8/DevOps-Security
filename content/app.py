@@ -1,4 +1,6 @@
 from flask import Flask, request, redirect, make_response, url_for
+import os
+import shutil
 import sqlite3
 import urllib
 import quoter_templates as templates
@@ -11,11 +13,18 @@ app.static_folder = '.'
 # The use of `check_same_thread` can cause unexpected results in rare cases. We'll
 # get rid of this when we learn about SQLAlchemy.
 # DEMO: Dit is een opzettelijke beveiligingskwetsbaarheid voor educatieve doeleinden.
-db = sqlite3.connect("db.sqlite3", check_same_thread=False)
+# De database en het logbestand staan in DATA_DIR. In Kubernetes is dat een aparte schrijfbare map,
+# want de rest van het bestandssysteem is read-only. De eerste keer krijgt die map de database uit het image.
+DATA_DIR = os.environ.get("DATA_DIR", ".")
+DB_PATH = os.path.join(DATA_DIR, "db.sqlite3")
+if not os.path.exists(DB_PATH):
+    shutil.copy("db.sqlite3", DB_PATH)
+
+db = sqlite3.connect(DB_PATH, check_same_thread=False)
 db.row_factory = sqlite3.Row
 
 # Log all requests for analytics purposes
-log_file = open('access.log', 'a', buffering=1)
+log_file = open(os.path.join(DATA_DIR, 'access.log'), 'a', buffering=1)
 @app.before_request
 def log_request():
     # OPZETTELIJK KWETSBAAR (Demo): We loggen alles, inclusief wachtwoorden
