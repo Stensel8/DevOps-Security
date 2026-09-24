@@ -1,0 +1,62 @@
+{# Het kader om elke pagina: kop, het formulier om een quote toe te voegen en het inlogformulier. #}
+{# Jinja escapet alles wat een gebruiker invult automatisch ({{ ... }}), dus ingevulde HTML of JavaScript wordt #}
+{# gewone tekst (XSS). Vroeger werd de invoer zo in de HTML geplakt. Opgelost in week 2, tijdens commit 251f107. #}
+<!DOCTYPE html>
+<html lang="en-US">
+<head>
+  <title>{{ title or "Quoter XP" }}</title>
+  <meta charset="utf-8">
+  <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<body>
+
+<header>
+  <div class="title">
+    <a class="home" href="{{ url_for('index') }}">Quoter XP</a>
+    {% if request.user_id %}
+    <label class="link" for="quoteCheckbox">Add a quote</label>
+    <a class="link" href="{{ url_for('signout') }}">Sign out</a>
+    {% else %}
+    <label class="link" for="signinCheckbox">Inloggen</label>
+    {% endif %}
+  </div>
+</header>
+<input id="quoteCheckbox" type="checkbox" class="fake">
+
+<div class="modal">
+  <form action="{{ url_for('post_quote') }}" method="post">
+    <h3>Quote</h3>
+    <textarea name="text"></textarea>
+    <h3>Attribution</h3>
+    <input type="text" name="attribution">
+    <label class="button cancel" for="quoteCheckbox">Cancel</label>
+    <input type="submit" value="Add it!">
+  </form>
+</div>
+
+{% set error = request.args.get('error') %}
+<input id="signinCheckbox" type="checkbox" class="fake" {{ 'checked' if error }}>
+
+<div class="modal">
+  <form action="{{ url_for('signin') }}" method="post">
+    <p class="warn">WARNING!!: This is a demo site. Do not use passwords you may be using on other services.</p>
+    {% if error %}<div class=error>{{ error }}</div>{% endif %}
+    <h3>Username</h3>
+    <input type="text" name="username">
+    <h3>Password</h3>
+    <input type="password" name="password">
+    <label class="button cancel" for="signinCheckbox">Cancel</label>
+    <input type="submit" value="Sign in / Sign up">
+  </form>
+</div>
+
+{% block content %}{% endblock %}
+
+<script src="{{ url_for('static', filename='scroll.js') }}"></script>
+
+<!-- This element is used to automatically scroll to the bottom of the document after posting something. -->
+<div id="bottom"></div>
+
+</body>
+</html>

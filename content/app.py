@@ -1,11 +1,10 @@
-from flask import Flask, request, redirect, session, url_for
+from flask import Flask, abort, redirect, render_template, request, session, url_for
 from werkzeug.security import check_password_hash, generate_password_hash
 import os
 import secrets
 import shutil
 import sqlite3
 import urllib
-import quoter_templates as templates
 
 # Run using `poetry install && poetry run flask run --reload`
 # Alleen static/ wordt publiek geserveerd. Vroeger was dat de hele map, waardoor je de database en
@@ -46,19 +45,22 @@ def check_authentication():
     request.user_id = session.get("user_id")
 
 
-# Hoofdpagina met alle quotes. De tekst wordt in de template ge-escaped (XSS), zie commit 251f107.
+# Hoofdpagina met alle quotes. De HTML staat in templates/, waar Jinja alles wat een gebruiker invult
+# automatisch escapet (XSS). Opgelost in week 2, tijdens commit 251f107. Sinds week 3 in Jinja-templates.
 @app.route("/")
 def index():
     quotes = db.execute("select id, text, attribution from quotes order by id").fetchall()
-    return templates.main_page(quotes, request.user_id, request.args.get('error'))
+    return render_template("index.html", quotes=quotes)
 
 
 # Pagina met een quote en de commentaren erbij.
 @app.route("/quotes/<int:quote_id>")
 def get_comments_page(quote_id):
     quote = db.execute("select id, text, attribution from quotes where id=?", (quote_id,)).fetchone()
+    if quote is None:
+        abort(404)
     comments = db.execute("select text, datetime(time,'localtime') as time, name as user_name from comments c left join users u on u.id=c.user_id where quote_id=? order by c.id", (quote_id,)).fetchall()
-    return templates.comments_page(quote, comments, request.user_id)
+    return render_template("quote.html", quote=quote, comments=comments, title=quote["text"])
 
 
 # Een nieuwe quote plaatsen.

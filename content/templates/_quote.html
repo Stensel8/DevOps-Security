@@ -1,0 +1,7 @@
+{# Eén quote (tekst en wie het zei). #}
+{% macro show_quote(q) %}
+<a href="{{ url_for('get_comments_page', quote_id=q.id) }}" class="quote img{{ q.id % 13 }}">
+  <q>{{ q.text }}</q>
+  <address>{{ q.attribution }}</address>
+</a>
+{% endmacro %}

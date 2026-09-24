@@ -1,0 +1,9 @@
+{# De hoofdpagina met alle quotes. #}
+{% extends "base.html" %}
+{% from "_quote.html" import show_quote %}
+
+{% block content %}
+<main>
+  {% for q in quotes %}{{ show_quote(q) }}{% endfor %}
+</main>
+{% endblock %}

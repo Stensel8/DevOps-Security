@@ -1,0 +1,25 @@
+{# De pagina van één quote, met de commentaren en (als je bent ingelogd) een formulier om te reageren. #}
+{% extends "base.html" %}
+{% from "_quote.html" import show_quote %}
+
+{% block content %}
+<main>
+  {{ show_quote(quote) }}
+  {% for c in comments %}
+  <section class="comment">
+    <aside>
+      <address>{{ c.user_name }}</address>
+      {% if c.time %}<time>{{ c.time }}</time>{% endif %}
+    </aside>
+    <p>{{ c.text }}</p>
+  </section>
+  {% endfor %}
+  {% if request.user_id %}
+  <form class="comment" action="{{ url_for('post_comment', quote_id=quote.id) }}" method="post">
+    <aside>You</aside>
+    <textarea name="text"></textarea>
+    <input type="submit" value="Post">
+  </form>
+  {% endif %}
+</main>
+{% endblock %}
