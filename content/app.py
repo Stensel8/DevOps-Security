@@ -7,7 +7,6 @@ import quoter_templates as templates
 
 # Run using `poetry install && poetry run flask run --reload`
 app = Flask(__name__)
-app.static_folder = '.'
 
 # Open the database. Have queries return dicts instead of tuples.
 # The use of `check_same_thread` can cause unexpected results in rare cases. We'll
