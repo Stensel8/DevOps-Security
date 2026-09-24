@@ -58,16 +58,23 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
 
+      # Het Dockerfile heeft twee stages: een builder (tussenimage met Poetry en pip) en de runtime.
+      # Met target: runtime bouwen we het applicatie-image en alleen dat wordt gepusht. De builder is een
+      # tussenstap die niet op Docker Hub komt.
+      # Het image krijgt twee tags: latest, en de commit-SHA. Die tag is voor deze commit altijd hetzelfde
+      # image. Daarmee testen en deployen we precies dit image, en kunnen we terug naar een vorige versie.
       # Op een pull request wordt het image wel gebouwd maar niet gepusht,
       # zodat een kapotte Dockerfile alsnog opvalt voor de merge.
-      - name: Build and push the Docker image
+      - name: Build and push the application image
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
         with:
           context: .
           file: ./Dockerfile
+          target: runtime
           push: ${{ github.ref == 'refs/heads/main' }}
           tags: |
             stensel8/devops-security:latest
+            stensel8/devops-security:${{ github.sha }}
 
   test:
     name: Test
@@ -87,11 +94,14 @@ jobs:
           username: ${{ secrets.DOCKERHUB_LOGIN }}
           password: ${{ secrets.DOCKER_HUB_PAT }}
 
+      # Test het image van deze commit (de SHA-tag), dus niet latest: dat kan intussen een andere zijn.
       - name: Smoke test the container
+        env:
+          IMAGE: stensel8/devops-security:${{ github.sha }}
         run: |
           set -euo pipefail
-          docker pull --quiet stensel8/devops-security:latest >/dev/null
-          container=$(docker run -d -p 80:5000 stensel8/devops-security:latest)
+          docker pull --quiet "$IMAGE" >/dev/null
+          container=$(docker run -d -p 80:5000 "$IMAGE")
           trap 'docker rm -f "$container" >/dev/null 2>&1 || true' EXIT
           # De eerste verzoeken mislukken als de container nog opstart. Daarom wachten we stil tot de
           # app antwoordt, maximaal 30 seconden. Met --fail telt ook een HTTP 4xx of 5xx als mislukt.
@@ -111,6 +121,11 @@ jobs:
     needs: [ test ]
     if: github.ref == 'refs/heads/main'
     runs-on: self-hosted
+    timeout-minutes: 10
+    # Twee deploys tegelijk zou elkaar in de weg zitten: ze wachten op elkaar.
+    concurrency:
+      group: deploy
+      cancel-in-progress: false
     steps:
       - name: Checkout source code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -129,7 +144,35 @@ jobs:
             --docker-password="$DOCKER_HUB_PULL_PAT" \
             --dry-run=client -o yaml | kubectl apply -f -
 
-      - run: |
-              kubectl delete deployment --all
-              kubectl apply -f ${{ github.workspace }}/kubernetes/deployment.yaml --force
-              kubectl apply -f ${{ github.workspace }}/kubernetes/nginx-service.yaml --force
+      # In deployment.yaml staat :latest als plaatsvervanger. Hier vervangen we die door de tag van deze
+      # commit. Elke deploy heeft dan een ander image en Kubernetes doet een echte rollout, waarbij de
+      # oude pod blijft draaien tot de nieuwe gezond is. Daarna wachten we tot de uitrol echt klaar is en de
+      # app antwoordt. Lukt dat niet, dan draaien we terug naar de vorige versie en faalt de job.
+      - name: Deploy the new version
+        env:
+          IMAGE: stensel8/devops-security:${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          rollback() {
+            echo "Uitrol mislukt. Status van de pods:" >&2
+            kubectl get pods -l app=quoterxp -o wide >&2 || true
+            kubectl logs -l app=quoterxp --tail=20 --prefix >&2 || true
+            echo "Terugdraaien naar de vorige versie." >&2
+            kubectl rollout undo deployment/student-devsecops >&2 || true
+            exit 1
+          }
+
+          sed "s|stensel8/devops-security:latest|${IMAGE}|" kubernetes/deployment.yaml | kubectl apply -f -
+          kubectl apply -f kubernetes/nginx-service.yaml
+
+          kubectl rollout status deployment/student-devsecops --timeout=120s || rollback
+
+          for _ in $(seq 1 15); do
+            if curl --fail --silent --output /dev/null http://localhost:30000; then
+              echo "De nieuwe versie draait en antwoordt via de Service."
+              exit 0
+            fi
+            sleep 2
+          done
+          rollback
