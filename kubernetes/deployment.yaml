@@ -25,9 +25,6 @@ spec:
         imagePullPolicy: Always
         ports:
           - containerPort: 5000
-        env:
-          - name: DATA_DIR
-            value: /data
         securityContext:
           runAsNonRoot: true
           runAsUser: 10001

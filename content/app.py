@@ -13,9 +13,10 @@ app.static_folder = '.'
 # The use of `check_same_thread` can cause unexpected results in rare cases. We'll
 # get rid of this when we learn about SQLAlchemy.
 # DEMO: Dit is een opzettelijke beveiligingskwetsbaarheid voor educatieve doeleinden.
-# De database en het logbestand staan in DATA_DIR. In Kubernetes is dat een aparte schrijfbare map,
-# want de rest van het bestandssysteem is read-only. De eerste keer krijgt die map de database uit het image.
-DATA_DIR = os.environ.get("DATA_DIR", ".")
+# De database en het logbestand staan in /data als die map er is. In Kubernetes is dat een aparte
+# schrijfbare map, want de rest van het bestandssysteem is read-only. De eerste keer krijgt die map
+# de database uit het image. Zonder /data staan ze naast de code.
+DATA_DIR = "/data" if os.path.isdir("/data") else "."
 DB_PATH = os.path.join(DATA_DIR, "db.sqlite3")
 if not os.path.exists(DB_PATH):
     shutil.copy("db.sqlite3", DB_PATH)
