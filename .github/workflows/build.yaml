@@ -90,13 +90,21 @@ jobs:
       - name: Smoke test the container
         run: |
           set -euo pipefail
+          docker pull --quiet stensel8/devops-security:latest >/dev/null
           container=$(docker run -d -p 80:5000 stensel8/devops-security:latest)
           trap 'docker rm -f "$container" >/dev/null 2>&1 || true' EXIT
-          # --fail laat een HTTP 5xx de job rood maken; --retry vervangt een vaste sleep.
-          curl --fail --silent --show-error \
-               --retry 10 --retry-delay 2 --retry-all-errors \
-               http://localhost >/dev/null
-          echo "Container antwoordde met HTTP 2xx."
+          # De eerste verzoeken mislukken als de container nog opstart. Daarom wachten we stil tot de
+          # app antwoordt, maximaal 30 seconden. Met --fail telt ook een HTTP 4xx of 5xx als mislukt.
+          for _ in $(seq 1 30); do
+            if curl --fail --silent --output /dev/null http://localhost; then
+              echo "Container antwoordde met HTTP 2xx."
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Container antwoordde niet binnen 30 seconden. Log van de container:" >&2
+          docker logs "$container" >&2
+          exit 1
 
   deploy:
     name: Deploy
