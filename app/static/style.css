@@ -155,45 +155,49 @@ html, body {
   }
   
   
+  /* Achtergrondfoto's van Unsplash (Unsplash License). De originelen stonden op cdn.glitch.com, maar dat
+     bestaat niet meer. Nu staan ze in static/img/, uitgesneden rond het onderwerp en als AVIF.
+     img0 Chris Czermak, img1 Timothy Dykes, img2 Antonio Dicaterina, img4 Gregory Hayes, img5 Prateek Pisat,
+     img7 Sora Sagano, img8 Karina Vorozheeva, img10 Cristian Palmer, img11 Alessio Soggetti. */
   .img0 {
-    background-image: url(https://cdn.glitch.com/2c3ff6b1-6ba9-4f7b-9054-82101e6a02d3%2Fchristopher-czermak-737894-unsplash.jpg.png?1531840610007);
+    background-image: url(img/img0.avif);
     color: black;
     text-shadow: 0 0 4px white
   }
   .img1 {
-    background-image: url(https://cdn.glitch.com/2c3ff6b1-6ba9-4f7b-9054-82101e6a02d3%2Ftimothy-dykes-728642-unsplash.jpg.png?1531840607982);
+    background-image: url(img/img1.avif);
     color: white;
   }
   .img2 {
-    background-image: url(https://cdn.glitch.com/2c3ff6b1-6ba9-4f7b-9054-82101e6a02d3%2Fantonio-dicaterina-738197-unsplash.jpg.png?1531840608990);
+    background-image: url(img/img2.avif);
     color: white;
     text-shadow: 0 2px 6px rgba(0,0,0,1)
   }
   .img4 {
-    background-image: url(https://cdn.glitch.com/2c3ff6b1-6ba9-4f7b-9054-82101e6a02d3%2Fgregory-hayes-737961-unsplash.jpg.png?1531840608935);
+    background-image: url(img/img4.avif);
     color: #ffebcb;
   }
   .img5 {
-    background-image: url(https://cdn.glitch.com/2c3ff6b1-6ba9-4f7b-9054-82101e6a02d3%2Fprateek-pisat-734986-unsplash.jpg.png?1531840607931);
+    background-image: url(img/img5.avif);
     color: white;
-    text-shadow: 1px 1px 3px rgba(0,0,0,0.4);
+    text-shadow: 0 2px 6px rgba(0,0,0,1);
   }
   .img7 {
-    background-image: url(https://cdn.glitch.com/2c3ff6b1-6ba9-4f7b-9054-82101e6a02d3%2Fsora-sagano-739153-unsplash.jpg.png?1531840609036);
+    background-image: url(img/img7.avif);
     color: white;
     text-shadow: 1px 1px 3px rgba(0,0,0,0.4);
   }
   .img8 {
-    background-image: url(https://cdn.glitch.com/2c3ff6b1-6ba9-4f7b-9054-82101e6a02d3%2Fkarina-vorozheeva-734804-unsplash.jpg.png?1531840609083);
+    background-image: url(img/img8.avif);
     text-shadow: 1px 1px 3px rgba(0,0,0,0.4);
     color: white;
   }
   .img10 {
-    background-image: url(https://cdn.glitch.com/2c3ff6b1-6ba9-4f7b-9054-82101e6a02d3%2Fcristian-palmer-733095-unsplash.jpg.png?1531840609699);
+    background-image: url(img/img10.avif);
     color: white;
   }
   .img11 {
-    background-image: url(https://cdn.glitch.com/2c3ff6b1-6ba9-4f7b-9054-82101e6a02d3%2Fasoggetti-737130-unsplash.jpg.png?1531840609748);
+    background-image: url(img/img11.avif);
     color: black;
   }
       
