@@ -245,6 +245,10 @@ CodeQL meldt een URL-redirect omdat `quote_id` uit de URL komt en in de redirect
 
 Vooraf heb ik de CodeQL CLI lokaal gedraaid: op de originele code kreeg ik dezelfde 10 meldingen als op GitHub, na de fixes nog 1.
 
+Na de push heeft CodeQL op GitHub opnieuw gescand en zijn 9 van de 10 meldingen gesloten. Er staat er nog 1 open: de `Secure`-vlag op de cookie. Doordat de regel verschoof, maakte CodeQL er een nieuwe melding van (#18). Die heb ik gesloten als "won't fix", net als de eerste (zie hieronder).
+
+![Code scanning na de fixes](images/codeql-na-de-fixes.png)
+
 ### Bewust nog open
 
 De `Secure`-vlag op de cookie (CodeQL en Snyk) heb ik niet gezet. Die werkt alleen over HTTPS, en de app draait bewust op gewone HTTP: een browser slaat een `Secure`-cookie niet op via HTTP, dus dan kan ik niet meer inloggen. In GitHub heb ik deze melding gesloten als "won't fix", met die reden erbij.
