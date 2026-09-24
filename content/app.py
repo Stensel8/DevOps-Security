@@ -31,7 +31,7 @@ def log_request():
     # OPZETTELIJK KWETSBAAR (Demo): We loggen alles, inclusief wachtwoorden
     # Dit is slecht. Als iemand toegang tot de logbestanden heeft, kunnen ze alle
     # wachtwoorden van ingelogde gebruikers zien. In echte applicaties: nooit doen!
-    log_file.write(f"{request.method} {request.path} {dict(request.form) if request.form else ''}\n")
+    log_file.write(f"{request.method} {request.path}\n")
 
 
 # Set user_id on request if user is logged in, or else set it to None.
