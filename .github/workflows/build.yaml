@@ -1,11 +1,13 @@
 name: CI/CD
 
-# Pushes naar main draaien de volledige pipeline inclusief deploy.
-# Pull requests valideren en bouwen alleen - geen image-push, geen deploy.
+# Pushes naar main en handmatige runs op main draaien de volledige pipeline inclusief deploy.
+# Pull requests en handmatige runs op een andere branch valideren en bouwen alleen -
+# geen image-push, geen deploy.
 on:
   push:
     branches: [ main ]
   pull_request:
+  workflow_dispatch:
 
 # Least privilege: geen enkele job schrijft naar de repo via GITHUB_TOKEN.
 # Docker Hub authenticeert met eigen secrets.
@@ -45,7 +47,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Login to Docker Hub
-        if: github.event_name == 'push'
+        if: github.ref == 'refs/heads/main'
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
         with:
           # Docker login uit GitHub secrets. NOOIT hardcoded!
@@ -63,15 +65,15 @@ jobs:
         with:
           context: .
           file: ./Dockerfile
-          push: ${{ github.event_name == 'push' }}
+          push: ${{ github.ref == 'refs/heads/main' }}
           tags: |
             stensel8/devops-security:latest
 
   test:
     name: Test
     needs: [ build ]
-    # Draait tegen het zojuist gepushte image, dus alleen na een push naar main.
-    if: github.event_name == 'push'
+    # Draait tegen het zojuist gepushte image, dus alleen op main.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout the repository
@@ -99,7 +101,7 @@ jobs:
   deploy:
     name: Deploy
     needs: [ test ]
-    if: github.event_name == 'push'
+    if: github.ref == 'refs/heads/main'
     runs-on: self-hosted
     steps:
       - name: Checkout source code
