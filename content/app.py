@@ -1,4 +1,5 @@
 from flask import Flask, request, redirect, make_response, url_for
+from werkzeug.security import check_password_hash, generate_password_hash
 import os
 import shutil
 import sqlite3
@@ -80,15 +81,13 @@ def signin():
 
     user = db.execute("select id, password from users where name=?", (username,)).fetchone()
     if user: # user exists
-        # Nog niet opgelost: het wachtwoord staat in platte tekst in de database (geen hashing).
-        if password != user['password']:
+        if not check_password_hash(user['password'], password):
             # wrong! redirect to main page with an error message
             return redirect('/?error='+urllib.parse.quote("Invalid password!"))
         user_id = user['id']
     else: # new sign up
         with db:
-            # Nog niet opgelost: het wachtwoord wordt niet gehasht.
-            cursor = db.execute("insert into users(name,password) values(?,?)", (username, password))
+            cursor = db.execute("insert into users(name,password) values(?,?)", (username, generate_password_hash(password)))
             user_id = cursor.lastrowid
 
     # HttpOnly en SameSite: opgelost in week 2, tijdens commit 3dfae64.

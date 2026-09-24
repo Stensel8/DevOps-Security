@@ -99,7 +99,7 @@ def page(content,user_id,title,error=None):
 
 <div class="modal">
   <form action="/signin" method="post">
-    <p class="warn">WARNING!!: This is a demo site and passwords are stored in plain text. Do not use passwords you may be using on other services.</p>
+    <p class="warn">WARNING!!: This is a demo site. Do not use passwords you may be using on other services.</p>
     {f"<div class=error>{escape(error)}</div>" if error else ""}
     <h3>Username</h3>
     <input type="text" name="username">
