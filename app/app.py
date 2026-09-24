@@ -47,6 +47,15 @@ def add_security_headers(response):
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "no-referrer"
+    # Advies van securityheaders.com. De CSP staat alleen scripts, CSS en plaatjes van de app zelf toe, dus
+    # een ingespoten <script> of plaatje van een andere site wordt niet geladen. Formulieren mogen alleen naar
+    # de app zelf. Permissions-Policy zet browserfuncties uit die de app niet gebruikt.
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+    )
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+    response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
+    response.headers["Cross-Origin-Resource-Policy"] = "same-origin"
     return response
 
 
