@@ -43,9 +43,9 @@
     <p class="warn">WARNING!!: This is a demo site. Do not use passwords you may be using on other services.</p>
     {% if error %}<div class=error>{{ error }}</div>{% endif %}
     <h3>Username</h3>
-    <input type="text" name="username">
+    <input type="text" name="username" autocomplete="username">
     <h3>Password</h3>
-    <input type="password" name="password">
+    <input type="password" name="password" autocomplete="current-password">
     <label class="button cancel" for="signinCheckbox">Cancel</label>
     <input type="submit" value="Sign in / Sign up">
   </form>
