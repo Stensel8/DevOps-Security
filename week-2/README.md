@@ -49,7 +49,7 @@ Voor de fixes stonden er 10 open meldingen in Code scanning (CodeQL): 6 keer SQL
 
 ![Security vulnerabilities voor de fixes](images/codeql-voor-de-fixes.png)
 
-Ik heb ze in vijf stappen aangepakt. Bij fix 1, 2, 4 en 5 heb ik een eigen commit gemaakt, zodat je de diff los kunt bekijken. De diffs hieronder heb ik ingekort tot alleen de code die veranderd is, met bestand en regelnummer erbij. De weggehaalde commentaarregels laat ik weg. De hele diff staat in de commit.
+Ik heb ze in vijf stappen aangepakt, en daarna ook de punten van Snyk IaC (fix 6). Bij fix 1, 2, 4 en 5 heb ik een eigen commit gemaakt, zodat je de diff los kunt bekijken. De diffs hieronder heb ik ingekort tot alleen de code die veranderd is, met bestand en regelnummer erbij. De weggehaalde commentaarregels laat ik weg. De hele diff staat in de commit.
 
 ### Fix 1: SQL-injectie
 
@@ -133,7 +133,7 @@ uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
 ![SHA-pinning in build.yaml (fix 3)](images/fix3-sha-pinning-build-yaml.png)
 
-Nog niet vastgepind zijn het image `stensel8/devops-security:latest` in de Deployment en `pipx install poetry` (zonder versie).
+Poetry heb ik ook vastgepind (`poetry==2.5.1`, in de Dockerfile en in de workflow) en Renovate houdt die versie bij. Nog niet vastgepind is het image `stensel8/devops-security:latest` in de Deployment.
 
 ### Fix 4: cookie met HttpOnly en SameSite
 
@@ -168,11 +168,75 @@ Na de push heeft CodeQL op GitHub opnieuw gescand en zijn 9 van de 10 meldingen 
 
 ![Code scanning na de fixes](images/codeql-na-de-fixes.png)
 
+### Fix 6: Snyk IaC in de Deployment
+
+Snyk IaC vond 8 punten in `kubernetes/deployment.yaml`. Voor de container ontbraken `allowPrivilegeEscalation: false`, `runAsNonRoot`, alle capabilities droppen, een `runAsUser` boven de 10000 (anders kan de UID botsen met een gebruiker op de host), een read-only root-bestandssysteem, een CPU-limiet, een geheugenlimiet en een liveness probe. Die heb ik allemaal toegevoegd. Het image draait al als gebruiker 10001, dus `runAsNonRoot` kan nu. Een seccomp-profiel (`RuntimeDefault`) heb ik er ook bij gezet. Dat stond niet in de lijst van Snyk.
+
+Een read-only root-bestandssysteem past niet zomaar bij deze app, want die schrijft de SQLite-database en het logbestand naast de code. Daarom staan die twee nu in een aparte map (`DATA_DIR`). In Kubernetes is dat een `emptyDir` op `/data`, en de app kopieert de database uit het image naar die map als hij er nog niet staat. De rest van het bestandssysteem is read-only.
+
+Zie de diffs van commit [`b3d10f5`](https://github.com/Stensel8/DevOps-Security/commit/b3d10f5) en [`fd73ded`](https://github.com/Stensel8/DevOps-Security/commit/fd73ded):
+
+```diff
+@@ content/app.py:2-3 @@
++import os
++import shutil
+@@ content/app.py:18-23 @@
+-db = sqlite3.connect("db.sqlite3", check_same_thread=False)
++DATA_DIR = os.environ.get("DATA_DIR", ".")
++DB_PATH = os.path.join(DATA_DIR, "db.sqlite3")
++if not os.path.exists(DB_PATH):
++    shutil.copy("db.sqlite3", DB_PATH)
++db = sqlite3.connect(DB_PATH, check_same_thread=False)
+@@ content/app.py:27 @@
+-log_file = open('access.log', 'a', buffering=1)
++log_file = open(os.path.join(DATA_DIR, 'access.log'), 'a', buffering=1)
+```
+
+```diff
+@@ kubernetes/deployment.yaml:19-21 @@
++      securityContext:
++        seccompProfile:
++          type: RuntimeDefault
+@@ kubernetes/deployment.yaml:28-57 @@
++        env:
++          - name: DATA_DIR
++            value: /data
++        securityContext:
++          runAsNonRoot: true
++          runAsUser: 10001
++          runAsGroup: 10001
++          allowPrivilegeEscalation: false
++          readOnlyRootFilesystem: true
++          capabilities:
++            drop: ["ALL"]
++        resources:
++          requests:
++            cpu: 50m
++            memory: 64Mi
++          limits:
++            cpu: 500m
++            memory: 256Mi
++        livenessProbe:
++          httpGet:
++            path: /
++            port: 5000
++          initialDelaySeconds: 5
++          periodSeconds: 10
++        volumeMounts:
++          - name: data
++            mountPath: /data
++      volumes:
++        - name: data
++          emptyDir: {}
+```
+
+Ik heb dit getest in een K3s van dezelfde versie als mijn cluster (draaiend in Docker). De pod komt op `Running`, blijft `Ready` zonder herstarts en de liveness probe slaagt. In de pod zie ik dat alle capabilities weg zijn, dat schrijven naar `/app` niet kan (`Read-only file system`) en dat inloggen en quotes plaatsen nog werkt. Trivy vond op het manifest 19 punten voor de aanpassing en nog 3 erna: het `:latest`-tag, de default namespace en de vertrouwde registry.
+
 ### Wat nog open staat
 
 De `Secure`-vlag op de cookie (CodeQL en Snyk) heb ik niet gezet. Die werkt alleen met HTTPS. De app draait op gewone HTTP, en dan slaat een browser de cookie niet op, dus dan kan ik niet meer inloggen. Daarom heb ik de melding in GitHub gesloten als "won't fix", met die reden erbij.
 
-Ook de andere kwetsbaarheden laat ik staan: de `user_id` in de cookie is niet ondertekend, wachtwoorden staan in platte tekst en in het logbestand. De 8 punten van Snyk IaC in `deployment.yaml` zijn ook nog niet opgelost.
+Ook de andere kwetsbaarheden laat ik staan: de `user_id` in de cookie is niet ondertekend, wachtwoorden staan in platte tekst en in het logbestand.
 
 ## 2.3 Advies: veilig ontwikkelen in Plan en Code
 
