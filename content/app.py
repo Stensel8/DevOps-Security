@@ -39,6 +39,16 @@ def log_request():
     log_file.write(f"{request.method} {request.path}\n")
 
 
+# Een paar simpele beveiligingsheaders op elk antwoord: de browser mag het type niet zelf raden (nosniff), de
+# pagina mag niet in een frame van een andere site (clickjacking) en er gaat geen referer mee naar andere sites.
+@app.after_request
+def add_security_headers(response):
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    return response
+
+
 # Zet request.user_id als je bent ingelogd (uit de ondertekende sessie), anders None.
 @app.before_request
 def check_authentication():
