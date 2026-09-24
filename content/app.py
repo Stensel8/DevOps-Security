@@ -41,6 +41,7 @@ def log_request():
 
 # Een paar simpele beveiligingsheaders op elk antwoord: de browser mag het type niet zelf raden (nosniff), de
 # pagina mag niet in een frame van een andere site (clickjacking) en er gaat geen referer mee naar andere sites.
+# Toegevoegd in week 3, tijdens commit 8e01026.
 @app.after_request
 def add_security_headers(response):
     response.headers["X-Content-Type-Options"] = "nosniff"
@@ -56,7 +57,7 @@ def check_authentication():
 
 
 # Hoofdpagina met alle quotes. De HTML staat in templates/, waar Jinja alles wat een gebruiker invult
-# automatisch escapet (XSS). Opgelost in week 2, tijdens commit 251f107. Sinds week 3 in Jinja-templates.
+# automatisch escapet (XSS). Opgelost in week 2, tijdens commit 251f107. Sinds week 3 in Jinja-templates, tijdens commit 071ad02.
 @app.route("/")
 def index():
     quotes = db.execute("select id, text, attribution from quotes order by id").fetchall()
@@ -67,7 +68,7 @@ def index():
 @app.route("/quotes/<int:quote_id>")
 def get_comments_page(quote_id):
     quote = db.execute("select id, text, attribution from quotes where id=?", (quote_id,)).fetchone()
-    if quote is None:
+    if quote is None:  # onbekende quote: 404 in plaats van een fout (500)
         abort(404)
     comments = db.execute("select text, datetime(time,'localtime') as time, name as user_name from comments c left join users u on u.id=c.user_id where quote_id=? order by c.id", (quote_id,)).fetchall()
     return render_template("quote.html", quote=quote, comments=comments, title=quote["text"])

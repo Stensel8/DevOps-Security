@@ -40,6 +40,7 @@ WORKDIR /app
 USER 10001:10001
 
 # Gunicorn is een echte webserver voor productie. Flask's eigen server (flask run) is alleen voor ontwikkelen.
+# Sinds week 3, tijdens commit 830426d.
 # --worker-tmp-dir: gunicorn heeft een schrijfbare map voor zijn werkbestanden nodig. Het bestandssysteem is
 # read-only, dus we gebruiken /dev/shm (werkgeheugen), dat is altijd schrijfbaar. De control-socket van gunicorn
 # (voor beheer op afstand) hebben we niet nodig en zou ook naar het read-only bestandssysteem schrijven.
