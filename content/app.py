@@ -88,7 +88,7 @@ def signin():
     # User ID staat zomaar in de cookie. Aanvaller kan de cookie veranderen naar user_id=1
     # en is ingelogd als die andere persoon. Geen beveiliging.
     response = make_response(redirect('/'))
-    response.set_cookie('user_id', str(user_id))
+    response.set_cookie('user_id', str(user_id), httponly=True, samesite='Lax')
     return response
 
 
