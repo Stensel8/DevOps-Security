@@ -4,7 +4,7 @@ import os
 import secrets
 import shutil
 import sqlite3
-import urllib
+import urllib.parse
 
 # Run using `poetry install && poetry run flask run --reload`
 # Alleen static/ wordt publiek geserveerd. Vroeger was dat de hele map, waardoor je de database en
@@ -36,7 +36,9 @@ log_file = open(os.path.join(DATA_DIR, 'access.log'), 'a', buffering=1)
 @app.before_request
 def log_request():
     # Vroeger stonden hier ook de formuliervelden in, dus de wachtwoorden. Opgelost in week 2, tijdens commit 9355c96.
-    log_file.write(f"{request.method} {request.path}\n")
+    # URL-encoding voorkomt dat control-tekens in het pad extra logregels maken.
+    log_path = urllib.parse.quote(request.path, safe="/")
+    log_file.write(f"{request.method} {log_path}\n")
 
 
 # Een paar simpele beveiligingsheaders op elk antwoord: de browser mag het type niet zelf raden (nosniff), de
