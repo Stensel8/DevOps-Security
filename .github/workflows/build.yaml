@@ -138,7 +138,7 @@ jobs:
 
       # Scant het image van deze commit (de SHA-tag), dus niet latest.
       - name: Analyze the image for vulnerabilities
-        uses: docker/scout-action@221e7f4860634eeb1579e3bd7ca232e577bd1864 # v1.26.0
+        uses: docker/scout-action@a4119c5a8c5076236a54e4ce99531f7e4dd2ef84 # v1.27.0
         with:
           command: cves
           image: stensel8/devops-security:${{ github.sha }}
