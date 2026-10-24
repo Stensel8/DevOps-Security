@@ -7,7 +7,7 @@
 # is de bron jouw repo, met --from=builder is de bron de builder-stage.
 
 # ---------- Stap 1 van 2: builder (tussenimage, wordt niet gepusht) ----------
-FROM python:3.15-alpine@sha256:ff4d3c9b1a48f646eedd93182aaea385c7a5452f4c8a8cd7cef686babacf4928 AS builder
+FROM python:3.15-alpine@sha256:d44b1254cb92329418d164b22b20d86bbd3869d48e80e09e476531a409a728bb AS builder
 
 WORKDIR /app
 RUN pip install --no-cache-dir poetry==2.5.1
@@ -22,7 +22,7 @@ RUN poetry config virtualenvs.in-project true \
     && poetry install --no-root --only main --no-interaction --no-ansi
 
 # ---------- Stap 2 van 2: runtime (het applicatie-image dat wordt gepusht) ----------
-FROM python:3.15-alpine@sha256:ff4d3c9b1a48f646eedd93182aaea385c7a5452f4c8a8cd7cef686babacf4928 AS runtime
+FROM python:3.15-alpine@sha256:d44b1254cb92329418d164b22b20d86bbd3869d48e80e09e476531a409a728bb AS runtime
 
 # Pip weghalen: de app heeft het niet nodig en scanners klagen over oude onderdelen erin
 RUN PIP_ROOT_USER_ACTION=ignore pip uninstall -y pip
