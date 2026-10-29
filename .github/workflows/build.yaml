@@ -28,8 +28,9 @@ jobs:
         with:
           python-version: "3.14"
 
+      # Dezelfde Poetry-versie als in het Dockerfile, uit requirements-poetry.txt (bijgewerkt door Dependabot).
       - name: Install Poetry
-        run: pipx install poetry==2.5.1
+        run: pip install -r requirements-poetry.txt
 
       - name: Check pyproject.toml and poetry.lock are in sync
         working-directory: app

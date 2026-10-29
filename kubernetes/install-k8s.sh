@@ -142,7 +142,7 @@ USAGE
 # === Settings ===
 LOG_FILE="/tmp/k8s_install_$(date +%Y%m%d_%H%M%S).log"
 
-# Pinned releases (Renovate-managed).
+# Pinned releases (update by hand: Dependabot can't track versions in shell scripts).
 K8S_VERSION="${K8S_VERSION:-v1.37.1}"
 FLANNEL_VERSION="${FLANNEL_VERSION:-v0.28.10}"
 

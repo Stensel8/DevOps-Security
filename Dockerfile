@@ -10,7 +10,9 @@
 FROM python:3.15-alpine@sha256:d44b1254cb92329418d164b22b20d86bbd3869d48e80e09e476531a409a728bb AS builder
 
 WORKDIR /app
-RUN pip install --no-cache-dir poetry==2.5.1
+# Uit jouw repo: de Poetry-versie. Die staat in een eigen bestand, zodat Dependabot hem kan bijwerken.
+COPY requirements-poetry.txt ./
+RUN pip install --no-cache-dir -r requirements-poetry.txt
 
 # Uit jouw repo, naar /app in de builder: alleen de lijst met dependencies, niet de code.
 # Zolang die twee bestanden gelijk blijven, hergebruikt Docker de installatie uit de cache.
