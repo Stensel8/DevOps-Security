@@ -1,0 +1,46 @@
+name: Trivy
+
+# Scant de repository op kwetsbare dependencies (app/poetry.lock), misconfiguraties in het Dockerfile en de
+# Kubernetes-manifests, en per ongeluk gecommitte secrets. Dit doet wat de PR-checks van Snyk (Open Source
+# en IaC) deden, maar dan op elke pull request vóór de merge. De resultaten komen naast CodeQL in het
+# Security-tabblad (Code scanning alerts).
+# De scan laat de pipeline niet falen. De gate zit in de Scan-job van CI/CD: Docker Scout scant daar het
+# gebouwde image en houdt de deploy tegen bij een Critical of High.
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  schedule:
+    - cron: "17 4 * * 1" # elke maandagochtend: er komen nieuwe CVE's bij, ook als de code niet verandert
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  trivy:
+    name: Trivy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Scan the repository (vulnerabilities, misconfigurations, secrets)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,misconfig,secret
+          severity: CRITICAL,HIGH
+          format: sarif
+          output: trivy-results.sarif
+          # Zonder deze regel negeert de action "severity" bij SARIF en komt alles in het Security-tabblad.
+          limit-severities-for-sarif: true
+
+      - name: Upload the results to the Security tab
+        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4
+        with:
+          sarif_file: trivy-results.sarif
+          category: trivy
