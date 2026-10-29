@@ -142,7 +142,8 @@ EOF
 # === Settings ===
 LOG_FILE="/tmp/k3s_install_$(date +%Y%m%d_%H%M%S).log"
 
-# Pinned K3s release (Renovate-managed). get.k3s.io reads INSTALL_K3S_VERSION.
+# Pinned K3s release (update by hand: Dependabot can't track versions in shell scripts).
+# get.k3s.io reads INSTALL_K3S_VERSION.
 K3S_VERSION="${K3S_VERSION:-v1.37.1+k3s1}"
 
 # Set by --dual-stack. Pod/service ranges: IPv4 defaults plus private (ULA) IPv6.

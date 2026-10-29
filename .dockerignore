@@ -1,5 +1,6 @@
 *
 !app
+!requirements-poetry.txt
 app/__pycache__
 app/.venv
 app/access.log

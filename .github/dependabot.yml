@@ -1,7 +1,13 @@
 # Dependabot version updates
-# Draait naast Renovate (renovate.json). Dependabot is hier het vangnet:
-# het dekt de standaard-ecosystems. Renovate doet daarnaast digest-pinning,
-# de Kubernetes-manifests en de versies in install_kubernetes.sh.
+# Dependabot houdt alle dependencies bij: de Python-packages, Poetry, de base image in het Dockerfile
+# en de GitHub Actions. Elke maandag komen er pull requests voor nieuwe versies, en elke PR draait door
+# de CI/CD-pipeline.
+#
+# Wat Dependabot niet kan: versies in shellscripts bijwerken. De K3s-, Kubernetes- en Flannel-versie in
+# kubernetes/install-k3s.sh en kubernetes/install-k8s.sh werk ik daarom met de hand bij.
+#
+# Labels: Dependabot zet zelf "dependencies" en het label van het ecosystem (python, docker,
+# github_actions) op elke PR.
 version: 2
 
 updates:
@@ -17,11 +23,12 @@ updates:
       time: "06:00"
       timezone: "Europe/Amsterdam"
     open-pull-requests-limit: 10
-    labels:
-      - "dependencies"
-      - "python"
+    # Ook de indirecte dependencies in poetry.lock bijwerken (zoals MarkupSafe en click), niet alleen
+    # de vier uit pyproject.toml. Zo blijft de hele lockfile actueel.
+    allow:
+      - dependency-type: "all"
     commit-message:
-      prefix: "pip"
+      prefix: "chore"
       include: "scope"
     groups:
       # Minor + patch samen in 1 PR; majors blijven losse PR's
@@ -33,7 +40,24 @@ updates:
           - "patch"
 
   # ---------------------------------------------------------------
-  # Docker base images - Dockerfile in root
+  # Poetry zelf - de versie staat in requirements-poetry.txt in de root.
+  # Het Dockerfile en de workflow installeren Poetry uit dat bestand.
+  # ---------------------------------------------------------------
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Europe/Amsterdam"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+
+  # ---------------------------------------------------------------
+  # Docker base image - Dockerfile in root
+  # De image staat vast op een digest (sha256). Dependabot werkt de tag en de digest bij.
   # ---------------------------------------------------------------
   - package-ecosystem: "docker"
     directory: "/"
@@ -43,31 +67,13 @@ updates:
       time: "06:00"
       timezone: "Europe/Amsterdam"
     open-pull-requests-limit: 5
-    labels:
-      - "dependencies"
-      - "docker"
     commit-message:
-      prefix: "docker"
-
-  # ---------------------------------------------------------------
-  # Docker images in de Kubernetes-manifests
-  # ---------------------------------------------------------------
-  - package-ecosystem: "docker"
-    directory: "/kubernetes"
-    schedule:
-      interval: "weekly"
-      day: "monday"
-      time: "06:00"
-      timezone: "Europe/Amsterdam"
-    open-pull-requests-limit: 5
-    labels:
-      - "dependencies"
-      - "kubernetes"
-    commit-message:
-      prefix: "docker"
+      prefix: "chore"
+      include: "scope"
 
   # ---------------------------------------------------------------
   # GitHub Actions - .github/workflows (altijd directory "/")
+  # De actions staan vast op een commit-SHA met de versie als commentaar. Dependabot werkt beide bij.
   # ---------------------------------------------------------------
   - package-ecosystem: "github-actions"
     directory: "/"
@@ -77,11 +83,9 @@ updates:
       time: "06:00"
       timezone: "Europe/Amsterdam"
     open-pull-requests-limit: 5
-    labels:
-      - "dependencies"
-      - "github-actions"
     commit-message:
-      prefix: "ci"
+      prefix: "chore"
+      include: "scope"
     groups:
       github-actions:
         patterns:
