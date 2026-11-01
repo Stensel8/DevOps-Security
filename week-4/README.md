@@ -16,6 +16,32 @@ Na de install: ingelogd op `https://ec2-54-84-222-42.compute-1.amazonaws.com` me
 
 <img src="images/harbor-projects-ingelogd.png" alt="Ingelogd in Harbor, project library aangemaakt" width="720">
 
+Push- en pull-bewijs: het eigen image van Docker Hub gepulld en naar Harbor gepusht, met Harbor's eigen self-signed cert vertrouwd via `/etc/docker/certs.d/<host>/ca.crt` (dezelfde manier als bij een externe client zou moeten, alleen hier op de Harbor-instance zelf gedaan omdat het vertrouwen van het certificaat op mijn eigen laptop vastliep op een polkit/sudo-probleem).
+
+```
+$ docker pull stensel8/devops-security:latest
+Status: Downloaded newer image for stensel8/devops-security:latest
+
+$ docker login ec2-54-84-222-42.compute-1.amazonaws.com -u admin
+Login Succeeded
+
+$ docker tag stensel8/devops-security:latest ec2-54-84-222-42.compute-1.amazonaws.com/library/devops-security:latest
+$ docker push ec2-54-84-222-42.compute-1.amazonaws.com/library/devops-security:latest
+latest: digest: sha256:66b0a6b1382f092e7a988e6f5d05fb7b7c201392b5253859c0dbd5035d34b5e5 size: 857
+
+$ docker rmi ec2-54-84-222-42.compute-1.amazonaws.com/library/devops-security:latest
+$ docker pull ec2-54-84-222-42.compute-1.amazonaws.com/library/devops-security:latest
+Status: Downloaded newer image for ec2-54-84-222-42.compute-1.amazonaws.com/library/devops-security:latest
+```
+
+<img src="images/harbor-repository-gepusht.png" alt="Het gepushte devops-security image in Harbor" width="720">
+
+In het artifact zelf staan "Scan Vulnerability" en "Generate SBOM" uitgeschakeld, met "Unsupported" bij Vulnerabilities en SBOM. Dat is bewust: de minimale install heeft geen scanner aan Harbor gekoppeld (`--with-trivy` niet meegegeven bij de installer), want dat werk doen Docker Scout en Trivy al in de pipeline (week 3). Harbor hier is puur een eigen registry, geen tweede scanner.
+
+<img src="images/harbor-artifact-detail.png" alt="Artifact-detail: scan/SBOM uitgeschakeld zonder gekoppelde scanner" width="720">
+
+Harbor ondersteunt een paar authenticatiemethodes (**Administration → Configuration → Authentication**): Database (lokale Harbor-accounts, zoals `admin` hier), LDAP/AD, OIDC (zie 4.3 voor de Entra ID-federatie-gedachte) en losstaand daarvan **Robot Accounts**: non-interactieve accounts, per project, met een eigen scope (bijvoorbeeld alleen pushen naar één repository) en een eigen levensduur. Voor deze PoC gebruik ik de lokale `admin`-login, maar voor een pipeline zou ik, net als bij de Docker Hub-PAT's in 4.2, een Robot Account met alleen push-rechten op dit ene project aanmaken in plaats van de admin-login in een CI-secret te zetten.
+
 ## Extra: het image ook naar GitHub Container Registry
 
 Naast Docker Hub pusht de `Build`-job nu ook naar GHCR (`ghcr.io/stensel8/devops-security`), met dezelfde `latest`- en commit-SHA-tags. Dat staat los van 4.1-4.4, maar sluit er wel op aan: het laat zien hoe makkelijk het is om een image op twee registries tegelijk te zetten, precies het soort afweging dat in 4.3 aan bod komt.
