@@ -1,5 +1,19 @@
 # Week 4
 
+## 4.1 Eigen Harbor-registry
+
+Een losse EC2-instance (`t2.large`, Ubuntu 26.04, zelfde sleutelpaar als CN1/CN2) naast het K3s-cluster, want Harbor's eigen docker-compose-stack (registry, portal, core, redis, postgres) wil niet concurreren met K3s op een al kleine `t2.medium`.
+
+<img src="images/ec2-keypair-selectie.png" alt="Zelfde sleutelpaar hergebruikt voor de Harbor-instance" width="400">
+
+Geïnstalleerd via een EC2 user-data-script ([kubernetes/harbor/harbor-userdata.sh](../kubernetes/harbor/harbor-userdata.sh)) dat zichzelf bij de eerste boot installeert: Docker, een self-signed TLS-certificaat op de eigen publieke hostname (opgezocht via de instance-metadata, IMDSv2), en de Harbor offline-installer. Het admin-wachtwoord genereert het script zelf en zet het lokaal in `/root/harbor-admin-password.txt` weg, nooit in de user-data zelf (die is in platte tekst leesbaar via de AWS-console/CLI).
+
+Eerste versie van het script bleef hangen: het riep `cloud-init status --wait` aan om op het netwerk te wachten, maar draait zelf al als onderdeel van cloud-init's laatste module, dus wachtte op zichzelf. Gefixt door die regel te laten vervallen (user-data draait toch al pas na de netwerk-stap van cloud-init).
+
+Na de install: ingelogd op `https://ec2-54-84-222-42.compute-1.amazonaws.com` met het gegenereerde wachtwoord.
+
+<img src="images/harbor-projects-ingelogd.png" alt="Ingelogd in Harbor, project library aangemaakt" width="720">
+
 ## Extra: het image ook naar GitHub Container Registry
 
 Naast Docker Hub pusht de `Build`-job nu ook naar GHCR (`ghcr.io/stensel8/devops-security`), met dezelfde `latest`- en commit-SHA-tags. Dat staat los van 4.1-4.4, maar sluit er wel op aan: het laat zien hoe makkelijk het is om een image op twee registries tegelijk te zetten, precies het soort afweging dat in 4.3 aan bod komt.
