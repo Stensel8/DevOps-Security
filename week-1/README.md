@@ -89,6 +89,14 @@ De Deployment gebruikt een rolling update met een readiness probe, zodat de oude
 
 <img src="images/pipeline-run.png" alt="Pipeline na de push" width="720">
 
+Inmiddels zijn er vijf jobs (Scan erbij, zie week 3), met Build-Scan-Test parallel en Deploy pas als die alle drie klaar zijn:
+
+<img src="images/pipeline-run-graph.png" alt="De vijf jobs van de pipeline als grafiek" width="720">
+
+Op de GitHub-pagina van de repo staan ook een paar badges: Docker Hub, GHCR, CI/CD en CodeQL, die je zelf kan genereren via Actions → workflow → "Create status badge". Ze laten meteen zien of de laatste run geslaagd is, zonder dat iemand eerst hoeft door te klikken.
+
+<img src="images/github-badges.png" alt="Badges bovenaan de README" width="500">
+
 ### Onder welk account draait de runner?
 
 De runner draait als `ubuntu` (zie `ubuntu@CN1` in de [screenshot](images/runner-config.png)). Dat account kan `sudo` zonder wachtwoord en gebruikt de kubeconfig van de K3s-admin. Deploy draait dus met alle rechten op het cluster. Voor productie is dat niet veilig: wie de workflow kan aanpassen, kan alles op CN1 en in het cluster.
@@ -110,7 +118,14 @@ Mijn advies voor SolidApps:
 3. De CIS Controls en CIS Benchmarks voor Kubernetes, Docker en Ubuntu als technische basis. Die controles kunnen automatisch in de pipeline draaien.
 4. Eén keer vastleggen welke NIS2-maatregel bij welke ISO- en CIS-maatregel hoort.
 
-Bronnen: [ISO 27001](https://www.iso.org/standard/27001), [ISO 27002](https://www.iso.org/standard/75652.html), [NIS2](https://eur-lex.europa.eu/eli/dir/2022/2555/oj), [CIS Controls](https://www.cisecurity.org/controls/v8), [CIS mapping naar ISO 27001](https://www.cisecurity.org/insights/white-papers/cis-controls-v8-1-mapping-to-iso-iec-27001-2022), [CIS mapping naar NIS2](https://www.cisecurity.org/insights/white-papers/cis-controls-v8-1-mapping-to-nis2-directive-2022-2555).
+**Bronnen**
+
+- International Organization for Standardization. (z.d.). *ISO/IEC 27001*. [https://www.iso.org/standard/27001](https://www.iso.org/standard/27001)
+- International Organization for Standardization. (z.d.). *ISO/IEC 27002*. [https://www.iso.org/standard/75652.html](https://www.iso.org/standard/75652.html)
+- Europees Parlement en de Raad van de Europese Unie. (2022). *Richtlijn (EU) 2022/2555 (NIS2-richtlijn)*. EUR-Lex. [https://eur-lex.europa.eu/eli/dir/2022/2555/oj](https://eur-lex.europa.eu/eli/dir/2022/2555/oj)
+- Center for Internet Security. (z.d.). *CIS Controls v8*. [https://www.cisecurity.org/controls/v8](https://www.cisecurity.org/controls/v8)
+- Center for Internet Security. (z.d.). *CIS Controls v8.1 mapping to ISO/IEC 27001:2022*. [https://www.cisecurity.org/insights/white-papers/cis-controls-v8-1-mapping-to-iso-iec-27001-2022](https://www.cisecurity.org/insights/white-papers/cis-controls-v8-1-mapping-to-iso-iec-27001-2022)
+- Center for Internet Security. (z.d.). *CIS Controls v8.1 mapping to NIS2 Directive 2022/2555*. [https://www.cisecurity.org/insights/white-papers/cis-controls-v8-1-mapping-to-nis2-directive-2022-2555](https://www.cisecurity.org/insights/white-papers/cis-controls-v8-1-mapping-to-nis2-directive-2022-2555)
 
 ## 1.3 CVE's en signature-based detectie
 
@@ -118,4 +133,13 @@ CVE's kunnen op een paar manieren ingedeeld worden: op ernst (CVSS: Low, Medium,
 
 Bij signature-based detectie vergelijkt een scanner de packages en versies in een image (de SBOM) met databases met bekende kwetsbaarheden, zoals de NVD en OSV. SolidApps kan dat bij elke build in de pipeline doen, bijvoorbeeld met Docker Scout of Trivy. Er komen elke dag nieuwe CVE's bij, dus bestaande images moeten ook regelmatig opnieuw gescand worden. Het nadeel is dat alleen bekende kwetsbaarheden gevonden worden, dus geen zero-days.
 
-Bronnen: [CVE](https://www.cve.org), [NVD en CVSS](https://nvd.nist.gov/vuln-metrics/cvss), [CWE](https://cwe.mitre.org), [CISA KEV](https://www.cisa.gov/known-exploited-vulnerabilities-catalog), [EPSS](https://www.first.org/epss/), [OSV](https://osv.dev), [Trivy](https://trivy.dev), [Docker Scout](https://docs.docker.com/scout/).
+**Bronnen**
+
+- MITRE / CVE Program. (z.d.). *CVE – Common Vulnerabilities and Exposures*. [https://www.cve.org](https://www.cve.org)
+- National Institute of Standards and Technology. (z.d.). *NVD: Vulnerability Metrics (CVSS)*. [https://nvd.nist.gov/vuln-metrics/cvss](https://nvd.nist.gov/vuln-metrics/cvss)
+- MITRE. (z.d.). *CWE – Common Weakness Enumeration*. [https://cwe.mitre.org](https://cwe.mitre.org)
+- Cybersecurity and Infrastructure Security Agency. (z.d.). *Known Exploited Vulnerabilities Catalog*. [https://www.cisa.gov/known-exploited-vulnerabilities-catalog](https://www.cisa.gov/known-exploited-vulnerabilities-catalog)
+- Forum of Incident Response and Security Teams. (z.d.). *EPSS – Exploit Prediction Scoring System*. [https://www.first.org/epss/](https://www.first.org/epss/)
+- Open Source Security Foundation. (z.d.). *OSV – Open Source Vulnerabilities*. [https://osv.dev](https://osv.dev)
+- Aqua Security. (z.d.). *Trivy*. [https://trivy.dev](https://trivy.dev)
+- Docker, Inc. (z.d.). *Docker Scout*. [https://docs.docker.com/scout/](https://docs.docker.com/scout/)

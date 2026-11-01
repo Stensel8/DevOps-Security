@@ -1,30 +1,32 @@
 # Dit Dockerfile bouwt in twee stappen (multi-stage), dus er zijn twee images:
-#   1. builder  Tussenimage waarmee gebouwd wordt: Poetry installeert hier de dependencies. Wordt niet gepusht.
+#   1. builder  Tussenimage waarmee gebouwd wordt: uv installeert hier de dependencies. Wordt niet gepusht.
 #   2. runtime  Het applicatie-image dat naar Docker Hub gaat: alleen de app en de dependencies.
-#               Geen Poetry, geen pip en het draait niet als root.
+#               Geen uv, geen pip en het draait niet als root.
 #
 # COPY <van> <naar>: de bestemming is altijd in het image dat op dat moment gebouwd wordt. Zonder --from
 # is de bron jouw repo, met --from=builder is de bron de builder-stage.
 
 # ---------- Stap 1 van 2: builder (tussenimage, wordt niet gepusht) ----------
-FROM python:3.15-alpine@sha256:d44b1254cb92329418d164b22b20d86bbd3869d48e80e09e476531a409a728bb AS builder
+FROM python:3.15-alpine@sha256:20a82dbc2783112ddb91d1534603f802d222a3e63e593cd002eb2ac534e70211 AS builder
+
+# uv zelf komt niet van pip of apt, maar als los, gepinned binary uit het officiële uv-image.
+COPY --from=ghcr.io/astral-sh/uv@sha256:32a7bb39b496babbd997b0a39a4d66c126bdaf5661b302bf6f06abda8deca6ff /uv /usr/local/bin/uv
 
 WORKDIR /app
-# Uit jouw repo: de Poetry-versie. Die staat in een eigen bestand, zodat Dependabot hem kan bijwerken.
-COPY requirements-poetry.txt ./
-RUN pip install --no-cache-dir -r requirements-poetry.txt
+# UV_PYTHON_DOWNLOADS=never: gebruik de Python die al in dit image zit (van de base image hierboven),
+# niet er zelf eentje downloaden. UV_PROJECT_ENVIRONMENT zet de venv op hetzelfde pad als voorheen.
+ENV UV_PROJECT_ENVIRONMENT=/app/.venv UV_PYTHON_DOWNLOADS=never UV_LINK_MODE=copy
 
 # Uit jouw repo, naar /app in de builder: alleen de lijst met dependencies, niet de code.
 # Zolang die twee bestanden gelijk blijven, hergebruikt Docker de installatie uit de cache.
-COPY app/pyproject.toml app/poetry.lock ./
+COPY app/pyproject.toml app/uv.lock ./
 
-# Poetry maakt de venv in /app/.venv (zonder pip) en installeert alleen de dependencies uit poetry.lock
-RUN poetry config virtualenvs.in-project true \
-    && poetry config virtualenvs.options.no-pip true \
-    && poetry install --no-root --only main --no-interaction --no-ansi
+# --locked faalt hard als uv.lock niet meer bij pyproject.toml past (zelfde als poetry check --lock deed).
+# --no-install-project: dit is geen package om te installeren, alleen de dependencies eruit.
+RUN uv sync --locked --no-install-project
 
 # ---------- Stap 2 van 2: runtime (het applicatie-image dat wordt gepusht) ----------
-FROM python:3.15-alpine@sha256:d44b1254cb92329418d164b22b20d86bbd3869d48e80e09e476531a409a728bb AS runtime
+FROM python:3.15-alpine@sha256:20a82dbc2783112ddb91d1534603f802d222a3e63e593cd002eb2ac534e70211 AS runtime
 
 # Pip weghalen: de app heeft het niet nodig en scanners klagen over oude onderdelen erin
 RUN PIP_ROOT_USER_ACTION=ignore pip uninstall -y pip
@@ -35,7 +37,7 @@ ENV PATH="/app/.venv/bin:$PATH" PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
 # logbestand schrijven in de app-map.
 COPY --chown=10001:10001 app/ /app/
 # Uit de builder (--from=builder), naar dit image: de venv met de dependencies. Het enige dat we uit de
-# builder meenemen. Poetry en pip blijven daar.
+# builder meenemen. uv en pip blijven daar.
 COPY --from=builder --chown=10001:10001 /app/.venv /app/.venv
 
 WORKDIR /app

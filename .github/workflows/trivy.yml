@@ -1,6 +1,6 @@
 name: Trivy
 
-# Scant de repository op kwetsbare dependencies (app/poetry.lock), misconfiguraties in het Dockerfile en de
+# Scant de repository op kwetsbare dependencies (app/uv.lock), misconfiguraties in het Dockerfile en de
 # Kubernetes-manifests, en per ongeluk gecommitte secrets. Dit doet wat de PR-checks van Snyk (Open Source
 # en IaC) deden, maar dan op elke pull request vóór de merge. De resultaten komen naast CodeQL in het
 # Security-tabblad (Code scanning alerts).

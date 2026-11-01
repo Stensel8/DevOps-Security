@@ -151,7 +151,7 @@ Invoer: `<img src=x onerror=alert(1)>`, via `?error=` en via een quote.
 
 Ik heb alle dependencies geüpgraded, met Renovate en Dependabot. Snyk Open Source vindt daarom niets.
 
-Verder pin ik alles op een versie of commit SHA. Een tag zoals `v4` kan later naar andere code wijzen, een SHA niet. Renovate en Dependabot maken een pull request voor elke nieuwe versie, dus ik bepaal zelf wanneer ik update. Poetry staat vast op `poetry==2.5.1` (Dockerfile en workflow) en de K3s-versie staat vast in het script. In de Deployment staat `:latest` als plaatsvervanger. Bij het deployen vervangt de pipeline dat door de commit-SHA.
+Verder pin ik alles op een versie of commit SHA. Een tag zoals `v4` kan later naar andere code wijzen, een SHA niet. Renovate en Dependabot maken een pull request voor elke nieuwe versie, dus ik bepaal zelf wanneer ik update. Toen draaide dat nog via Poetry, vastgepind op `poetry==2.5.1` in het Dockerfile en de workflow; inmiddels is dat uv geworden (zie week 3), met het uv-binary zelf ook gepind op een vaste versie en checksum. De K3s-versie staat vast in het script. In de Deployment staat `:latest` als plaatsvervanger. Bij het deployen vervangt de pipeline dat door de commit-SHA.
 
 ```
 $ grep -h 'uses:' .github/workflows/build.yaml | sort -u
@@ -167,6 +167,14 @@ $ grep -n '^FROM' Dockerfile | cut -c1-60
 ```
 
 <img src="images/fix3-sha-pinning-build-yaml.png" alt="SHA-pinning in build.yaml (fix 3)" width="520">
+
+Dit is precies waar het bij DevOps Security om gaat: niet alleen mijn eigen code beveiligen, maar ook de supply chain van de pipeline zelf. Een `uses: actions/checkout@v7` haalt bij elke run op wat er op dat moment achter de tag `v7` hangt. Wordt die tag verplaatst (door een nieuwe release, maar ook door een gekaapt account dat 'm kwaadaardig verzet), dan draait mijn pipeline zonder dat ik iets wijzig opeens andere code. Met een SHA (`@3d3c42e5...`) verandert er niets totdat ik zelf de SHA bump. Komt er een nieuwe, kwetsbare of gecompromitteerde versie uit, dan raakt mij dat niet, want ik draai nog steeds de oude, vastgepinde SHA.
+
+Handmatig alle SHA's bijhouden is niet te doen, dus daar bestaat tooling voor die automatisch een pull request opent zodra er een nieuwe versie is, met de nieuwe SHA erin:
+
+- **Dependabot**, van GitHub zelf, staat nu aan op deze repository (`.github/dependabot.yml`).
+- **Renovate** deed hetzelfde werk hiervoor, met iets meer configuratie-opties. Ik ben overgestapt naar Dependabot (commit [`a9fd768`](https://github.com/Stensel8/DevOps-Security/commit/a9fd768)), vooral om niet twee tools naast elkaar te hoeven onderhouden.
+- Nieuw (en leuk om te volgen, al gebruik ik het hier niet): **Patchbot** van de Nederlandse [OpenCommit](https://opencommit.nl/en/news/patchbot/), een stichting die eigen git-hosting aanbiedt op opencommit.eu. Patchbot is gebouwd op Renovate en werkt via een `patchbot`-topic plus een collaborator met schrijfrechten op de repository, geconfigureerd via een gewone `renovate.json`. Een Europees alternatief voor dezelfde soort automatisering als Dependabot/Renovate.
 
 ### Fix 4: cookie met HttpOnly en SameSite
 
@@ -296,12 +304,18 @@ Voor tooling is de Snyk-extensie in de IDE handig (die bestaat ook voor Visual S
 
 SAST (static application security testing) kijkt naar de broncode zonder dat de app draait en vindt bijvoorbeeld een f-string in `db.execute`. Het kan vroeg (in de IDE en bij pull requests), maar geeft ook meldingen die niet kloppen (false positives). Snyk Code en CodeQL zijn SAST. DAST (dynamic application security testing) test de draaiende applicatie van buitenaf, bijvoorbeeld met OWASP ZAP. Dat vindt problemen in de configuratie en tijdens het draaien, maar kan pas laat en zegt niet op welke regel de fout zit. Ik zou SAST gebruiken tijdens Plan en Code en DAST in de testfase van de pipeline, tegen de omgeving die net is uitgerold.
 
-TODO: Kort stukje over CodeRabbit nog toevoegen..
-<img width="2560" height="1509" alt="image" src="https://github.com/user-attachments/assets/5b07b99e-e14b-4fbf-8bad-2680927b37e8" />
-<img width="2560" height="1506" alt="image" src="https://github.com/user-attachments/assets/fa97f4cd-e64a-49aa-9026-a4ea8f4bd560" />
+**Bronnen**
 
-
-
-Bronnen: [DevSecOps-controls (Microsoft)](https://learn.microsoft.com/nl-nl/azure/cloud-adoption-framework/secure/devsecops-controls), [SAST (Snyk)](https://snyk.io/learn/application-security/static-application-security-testing/), [Threat modeling (OWASP)](https://owasp.org/www-community/Threat_Modeling), [Bedreigingen per STRIDE-categorie (Microsoft)](https://learn.microsoft.com/en-us/azure/security/develop/threat-modeling-tool-threats), [OWASP Top 10](https://owasp.org/www-project-top-ten/), [OWASP ASVS](https://owasp.org/www-project-asvs/), [SQL Injection Prevention Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/SQL_Injection_Prevention_Cheat_Sheet.html), [XSS Prevention Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Cross_Site_Scripting_Prevention_Cheat_Sheet.html), [Source Code Analysis Tools (OWASP)](https://owasp.org/www-community/Source_Code_Analysis_Tools), [OWASP ZAP](https://www.zaproxy.org/), [Voorbeeld SQL-injectie](https://github.com/doublehops/sql-injection-attack-example).
+- Microsoft. (z.d.). *DevSecOps controls*. Microsoft Cloud Adoption Framework. [https://learn.microsoft.com/nl-nl/azure/cloud-adoption-framework/secure/devsecops-controls](https://learn.microsoft.com/nl-nl/azure/cloud-adoption-framework/secure/devsecops-controls)
+- Snyk. (z.d.). *What is SAST (static application security testing)?*. [https://snyk.io/learn/application-security/static-application-security-testing/](https://snyk.io/learn/application-security/static-application-security-testing/)
+- OWASP Foundation. (z.d.). *Threat modeling*. [https://owasp.org/www-community/Threat_Modeling](https://owasp.org/www-community/Threat_Modeling)
+- Microsoft. (z.d.). *Threats – STRIDE categories*. [https://learn.microsoft.com/en-us/azure/security/develop/threat-modeling-tool-threats](https://learn.microsoft.com/en-us/azure/security/develop/threat-modeling-tool-threats)
+- OWASP Foundation. (z.d.). *OWASP Top 10*. [https://owasp.org/www-project-top-ten/](https://owasp.org/www-project-top-ten/)
+- OWASP Foundation. (z.d.). *OWASP Application Security Verification Standard (ASVS)*. [https://owasp.org/www-project-asvs/](https://owasp.org/www-project-asvs/)
+- OWASP Foundation. (z.d.). *SQL Injection Prevention Cheat Sheet*. [https://cheatsheetseries.owasp.org/cheatsheets/SQL_Injection_Prevention_Cheat_Sheet.html](https://cheatsheetseries.owasp.org/cheatsheets/SQL_Injection_Prevention_Cheat_Sheet.html)
+- OWASP Foundation. (z.d.). *Cross Site Scripting Prevention Cheat Sheet*. [https://cheatsheetseries.owasp.org/cheatsheets/Cross_Site_Scripting_Prevention_Cheat_Sheet.html](https://cheatsheetseries.owasp.org/cheatsheets/Cross_Site_Scripting_Prevention_Cheat_Sheet.html)
+- OWASP Foundation. (z.d.). *Source Code Analysis Tools*. [https://owasp.org/www-community/Source_Code_Analysis_Tools](https://owasp.org/www-community/Source_Code_Analysis_Tools)
+- OWASP Foundation. (z.d.). *OWASP ZAP*. [https://www.zaproxy.org/](https://www.zaproxy.org/)
+- doublehops. (z.d.). *sql-injection-attack-example* [broncode]. GitHub. [https://github.com/doublehops/sql-injection-attack-example](https://github.com/doublehops/sql-injection-attack-example)
 
 Voor SHA-pinning: [Security hardening for GitHub Actions](https://docs.github.com/en/actions/how-tos/security-for-github-actions/security-guides/security-hardening-for-github-actions), [Docker best practices: pin base image versions](https://docs.docker.com/build/building/best-practices/) en [Renovate: Docker digest pinning](https://docs.renovatebot.com/docker/).

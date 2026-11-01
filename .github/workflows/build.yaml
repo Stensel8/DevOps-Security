@@ -28,22 +28,24 @@ jobs:
         with:
           python-version: "3.14"
 
-      # Dezelfde Poetry-versie als in het Dockerfile, uit requirements-poetry.txt (bijgewerkt door Dependabot).
-      - name: Install Poetry
-        run: pip install -r requirements-poetry.txt
+      # uv zelf als los, gepind binary (release tarball + checksum), niet via een Action van een derde partij.
+      - name: Install uv
+        run: |
+          set -euo pipefail
+          curl -sL -o uv.tar.gz https://github.com/astral-sh/uv/releases/download/0.13.5/uv-x86_64-unknown-linux-gnu.tar.gz
+          echo "f68d291c75783122dad58ab77def0e13f3233f358731db5d6d7e8715603b928f  uv.tar.gz" | sha256sum -c
+          tar xzf uv.tar.gz
+          sudo install -m 0755 uv-x86_64-unknown-linux-gnu/uv /usr/local/bin/uv
 
-      - name: Check pyproject.toml and poetry.lock are in sync
-        working-directory: app
-        run: poetry check --lock
-
+      # --locked faalt hard als uv.lock niet meer bij pyproject.toml past (zelfde als poetry check --lock deed).
       - name: Install the dependencies
         working-directory: app
-        run: poetry install --no-root --only main --no-interaction
+        run: uv sync --locked --no-install-project
 
       # De tests in tests/ controleren onder andere dat het access log niet te vervalsen is.
       - name: Run the unit tests
         working-directory: app
-        run: poetry run python -m unittest discover -s ../tests -v
+        run: uv run python -m unittest discover -s ../tests -v
 
       - name: Byte-compile the application
         run: python -m compileall app
@@ -52,6 +54,10 @@ jobs:
     name: Build
     needs: [ validate ]
     runs-on: ubuntu-latest
+    # Alleen deze job mag naar GitHub Container Registry pushen (packages: write), en alleen daarvoor.
+    permissions:
+      contents: read
+      packages: write
     steps:
       - name: Checkout the repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -62,19 +68,30 @@ jobs:
         with:
           # Docker login uit GitHub secrets. NOOIT hardcoded!
           # Secrets worden veilig geïnjecteerd en niet in logs getoond.
-          username: ${{ secrets.DOCKERHUB_LOGIN }}
+          username: ${{ secrets.DOCKER_HUB_LOGIN }}
           password: ${{ secrets.DOCKER_HUB_PAT }}
+
+      # GHCR: tweede plek voor hetzelfde image. GITHUB_TOKEN is genoeg (geen los secret nodig),
+      # met alleen packages: write hierboven, niet voor de rest van de pipeline.
+      - name: Login to GitHub Container Registry
+        if: github.ref == 'refs/heads/main'
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
 
-      # Het Dockerfile heeft twee stages: een builder (tussenimage met Poetry en pip) en de runtime.
+      # Het Dockerfile heeft twee stages: een builder (tussenimage met uv) en de runtime.
       # Met target: runtime bouwen we het applicatie-image en alleen dat wordt gepusht. De builder is een
       # tussenstap die niet op Docker Hub komt.
-      # Het image krijgt twee tags: latest, en de commit-SHA. Die tag is voor deze commit altijd hetzelfde
-      # image. Daarmee testen en deployen we precies dit image, en kunnen we terug naar een vorige versie.
-      # Op een pull request wordt het image wel gebouwd maar niet gepusht,
-      # zodat een kapotte Dockerfile alsnog opvalt voor de merge.
+      # Het image krijgt twee tags per registry: latest, en de commit-SHA. Die tag is voor deze commit
+      # altijd hetzelfde image. Daarmee testen en deployen we precies dit image, en kunnen we terug naar
+      # een vorige versie. Op een pull request wordt het image wel gebouwd maar niet gepusht, zodat een
+      # kapotte Dockerfile alsnog opvalt voor de merge. github.repository_owner moet lowercase zijn voor
+      # een registry-pad, vandaar de vaste "stensel8" i.p.v. de expressie.
       - name: Build and push the application image
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
         with:
@@ -82,11 +99,13 @@ jobs:
           file: ./Dockerfile
           target: runtime
           push: ${{ github.ref == 'refs/heads/main' }}
-          # Zet een SBOM (lijst met alle packages) als attestation bij het image op Docker Hub.
+          # Zet een SBOM (lijst met alle packages) als attestation bij het image, op beide registries.
           sbom: true
           tags: |
             stensel8/devops-security:latest
             stensel8/devops-security:${{ github.sha }}
+            ghcr.io/stensel8/devops-security:latest
+            ghcr.io/stensel8/devops-security:${{ github.sha }}
 
   test:
     name: Test
@@ -101,20 +120,20 @@ jobs:
       - name: Login to Docker Hub
         uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4
         with:
-          # Docker login uit GitHub secrets. NOOIT hardcoded!
+          # Docker login uit GitHub secrets. NOOIT hardcoded.
           # Secrets worden veilig geïnjecteerd en niet in logs getoond.
-          username: ${{ secrets.DOCKERHUB_LOGIN }}
+          username: ${{ secrets.DOCKER_HUB_LOGIN }}
           password: ${{ secrets.DOCKER_HUB_PAT }}
 
       # Test het image van deze commit (de SHA-tag), dus niet latest: dat kan intussen een andere zijn.
-      - name: Smoke test the container
+      # Geen trap meer die de container meteen opruimt: de Postman-tests hierna hebben 'm nog nodig.
+      - name: Start the container for testing
         env:
           IMAGE: stensel8/devops-security:${{ github.sha }}
         run: |
           set -euo pipefail
           docker pull --quiet "$IMAGE" >/dev/null
-          container=$(docker run -d -p 80:5000 "$IMAGE")
-          trap 'docker rm -f "$container" >/dev/null 2>&1 || true' EXIT
+          docker run -d --name test-container -p 80:5000 "$IMAGE"
           # De eerste verzoeken mislukken als de container nog opstart. Daarom wachten we stil tot de
           # app antwoordt, maximaal 30 seconden. Met --fail telt ook een HTTP 4xx of 5xx als mislukt.
           for _ in $(seq 1 30); do
@@ -125,8 +144,17 @@ jobs:
             sleep 1
           done
           echo "Container antwoordde niet binnen 30 seconden. Log van de container:" >&2
-          docker logs "$container" >&2
+          docker logs test-container >&2
           exit 1
+
+      # Postman-collectie (tests/postman/) met Newman: HTTP 200 + verwachte tekst, en dat de
+      # security-headers uit week 3 er nog staan. GitHub-runners hebben Node.js al geïnstalleerd.
+      - name: Run the Postman tests
+        run: npx --yes newman run tests/postman/quoter-xp.postman_collection.json --env-var baseUrl=http://localhost
+
+      - name: Stop the test container
+        if: always()
+        run: docker rm -f test-container >/dev/null 2>&1 || true
 
   # Scant het gepushte image met Docker Scout en faalt bij een Critical of High. Deploy wacht hierop, dus
   # zo'n image komt niet op het cluster. Draait alleen op main, want alleen daar wordt het image gepusht.
@@ -143,7 +171,7 @@ jobs:
         with:
           # Docker login uit GitHub secrets. NOOIT hardcoded!
           # Secrets worden veilig geïnjecteerd en niet in logs getoond.
-          username: ${{ secrets.DOCKERHUB_LOGIN }}
+          username: ${{ secrets.DOCKER_HUB_LOGIN }}
           password: ${{ secrets.DOCKER_HUB_PAT }}
 
       # Scant het image van deze commit (de SHA-tag), dus niet latest.
@@ -174,13 +202,13 @@ jobs:
       # in een bestand of in de shell-history op CN1. Het is een apart alleen-lezen token.
       - name: Create image pull secret
         env:
-          DOCKERHUB_LOGIN: ${{ secrets.DOCKERHUB_LOGIN }}
+          DOCKER_HUB_LOGIN: ${{ secrets.DOCKER_HUB_LOGIN }}
           DOCKER_HUB_PULL_PAT: ${{ secrets.DOCKER_HUB_PULL_PAT }}
         run: |
           : "${DOCKER_HUB_PULL_PAT:?secret DOCKER_HUB_PULL_PAT ontbreekt}"
           kubectl create secret docker-registry regcred \
             --docker-server=https://index.docker.io/v1/ \
-            --docker-username="$DOCKERHUB_LOGIN" \
+            --docker-username="$DOCKER_HUB_LOGIN" \
             --docker-password="$DOCKER_HUB_PULL_PAT" \
             --dry-run=client -o yaml | kubectl apply -f -
 

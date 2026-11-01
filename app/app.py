@@ -6,7 +6,7 @@ import shutil
 import sqlite3
 import urllib.parse
 
-# Run using `poetry install && poetry run flask run --reload`
+# Run using `uv sync && uv run flask run --reload`
 # Alleen static/ wordt publiek geserveerd. Vroeger was dat de hele map, waardoor je de database en
 # app.py kon downloaden. Opgelost in week 2, tijdens commit e217cf4.
 app = Flask(__name__)

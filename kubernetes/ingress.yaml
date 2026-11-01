@@ -1,0 +1,25 @@
+# Week 5.2: Ingress met TLS-terminatie (SSL-offloading). K3s heeft Traefik al ingebouwd als
+# IngressClass (ServiceLB simuleert een LoadBalancer met een poort per node, geen aparte
+# ingress-nginx-install nodig). tls.secretName verwijst naar het self-signed certificaat
+# dat met `kubectl create secret tls quoterxp-tls` is aangemaakt.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: quoterxp
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts:
+        - quoterxp.local
+      secretName: quoterxp-tls
+  rules:
+    - host: quoterxp.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: devops-security
+                port:
+                  number: 5000

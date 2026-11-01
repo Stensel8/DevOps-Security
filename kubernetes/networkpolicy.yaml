@@ -1,0 +1,18 @@
+# Week 5.3: pod-verkeer naar quoterxp beperken tot poort 5000. Zodra een pod door een NetworkPolicy
+# geselecteerd wordt, telt voor die pod alleen nog wat hier expliciet staat; al het andere inkomende
+# verkeer wordt stilletjes gedropt. Geen `from:` hier, dus elke bron mag binnenkomen zolang het naar
+# poort 5000 gaat (dat is nodig voor de NodePort-service uit kubernetes/service.yaml).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: quoterxp-allow-5000-only
+spec:
+  podSelector:
+    matchLabels:
+      app: quoterxp
+  policyTypes:
+    - Ingress
+  ingress:
+    - ports:
+        - protocol: TCP
+          port: 5000

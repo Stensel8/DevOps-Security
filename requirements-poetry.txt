@@ -1,2 +1,0 @@
-# Poetry-versie voor het Dockerfile en de CI/CD-workflow. Dependabot werkt deze regel bij.
-poetry==2.5.1

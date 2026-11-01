@@ -1,21 +1,21 @@
 # Dependabot version updates
-# Dependabot houdt alle dependencies bij: de Python-packages, Poetry, de base image in het Dockerfile
-# en de GitHub Actions. Elke maandag komen er pull requests voor nieuwe versies, en elke PR draait door
-# de CI/CD-pipeline.
+# Dependabot houdt alle dependencies bij: de Python-packages (uv), de base images in het Dockerfile
+# (inclusief het losse uv-image) en de GitHub Actions. Elke maandag komen er pull requests voor nieuwe
+# versies, en elke PR draait door de CI/CD-pipeline.
 #
 # Wat Dependabot niet kan: versies in shellscripts bijwerken. De K3s-, Kubernetes- en Flannel-versie in
-# kubernetes/install-k3s.sh en kubernetes/install-k8s.sh werk ik daarom met de hand bij.
+# kubernetes/install-k3s.sh en kubernetes/install-k8s.sh, en het losse uv-binary (met checksum) in
+# build.yaml, werk ik daarom met de hand bij.
 #
-# Labels: Dependabot zet zelf "dependencies" en het label van het ecosystem (python, docker,
+# Labels: Dependabot zet zelf "dependencies" en het label van het ecosystem (uv, docker,
 # github_actions) op elke PR.
 version: 2
 
 updates:
   # ---------------------------------------------------------------
-  # Python (Poetry) - pyproject.toml + poetry.lock staan in /app
-  # LET OP: het ecosystem heet "pip", niet "python". Poetry valt eronder.
+  # Python (uv) - pyproject.toml + uv.lock staan in /app
   # ---------------------------------------------------------------
-  - package-ecosystem: "pip"
+  - package-ecosystem: "uv"
     directory: "/app"
     schedule:
       interval: "weekly"
@@ -23,7 +23,7 @@ updates:
       time: "06:00"
       timezone: "Europe/Amsterdam"
     open-pull-requests-limit: 10
-    # Ook de indirecte dependencies in poetry.lock bijwerken (zoals MarkupSafe en click), niet alleen
+    # Ook de indirecte dependencies in uv.lock bijwerken (zoals MarkupSafe en click), niet alleen
     # de vier uit pyproject.toml. Zo blijft de hele lockfile actueel.
     allow:
       - dependency-type: "all"
@@ -38,22 +38,6 @@ updates:
         update-types:
           - "minor"
           - "patch"
-
-  # ---------------------------------------------------------------
-  # Poetry zelf - de versie staat in requirements-poetry.txt in de root.
-  # Het Dockerfile en de workflow installeren Poetry uit dat bestand.
-  # ---------------------------------------------------------------
-  - package-ecosystem: "pip"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-      day: "monday"
-      time: "06:00"
-      timezone: "Europe/Amsterdam"
-    open-pull-requests-limit: 5
-    commit-message:
-      prefix: "chore"
-      include: "scope"
 
   # ---------------------------------------------------------------
   # Docker base image - Dockerfile in root

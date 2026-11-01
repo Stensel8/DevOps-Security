@@ -1,0 +1,30 @@
+# Week 6.1: twee security-relevante alerts, naast de alerts die de kube-prometheus-stack al
+# standaard meelevert. Moet in dezelfde namespace als Prometheus staan en de juiste
+# release-label hebben, anders pikt de operator de PrometheusRule niet op.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: quoterxp-security-alerts
+  namespace: monitoring
+  labels:
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: quoterxp-security
+      rules:
+        - alert: QuoterXPHerhaaldeRestarts
+          expr: increase(kube_pod_container_status_restarts_total{namespace="default", pod=~"devops-security.*"}[15m]) >= 1
+          for: 1m
+          labels:
+            severity: warning
+          annotations:
+            summary: "devops-security pod is herstart"
+            description: "Onverwachte restart van de app-pod. Even de pod-logs checken waarom."
+        - alert: NodeHoogCPUGebruik
+          expr: 100 - (avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+          for: 2m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Node {{ $labels.instance }} heeft aanhoudend hoog CPU-gebruik"
+            description: "Langer dan 2 minuten boven de 80%. Even checken welk proces dat veroorzaakt."

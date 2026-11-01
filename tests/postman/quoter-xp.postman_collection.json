@@ -1,0 +1,68 @@
+{
+  "info": {
+    "name": "Quoter XP",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Homepage antwoordt met 200 en Quoter XP",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status is 200', function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "pm.test('body bevat Quoter XP', function () {",
+              "    pm.expect(pm.response.text()).to.include('Quoter XP');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Security headers staan erop",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('X-Content-Type-Options is nosniff', function () {",
+              "    pm.response.to.have.header('X-Content-Type-Options', 'nosniff');",
+              "});",
+              "pm.test('X-Frame-Options is DENY', function () {",
+              "    pm.response.to.have.header('X-Frame-Options', 'DENY');",
+              "});",
+              "pm.test('Content-Security-Policy staat erop', function () {",
+              "    pm.response.to.have.header('Content-Security-Policy');",
+              "});",
+              "pm.test('draait op gunicorn, niet op de Flask-ontwikkelserver', function () {",
+              "    var server = (pm.response.headers.get('Server') || '').toLowerCase();",
+              "    pm.expect(server).to.include('gunicorn');",
+              "    pm.expect(server).to.not.include('werkzeug');",
+              "});"
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost"
+    }
+  ]
+}

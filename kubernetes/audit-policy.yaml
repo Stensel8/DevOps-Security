@@ -1,0 +1,27 @@
+# Week 5.1, CIS 3.2.2: auditbeleid dat de belangrijkste beveiligingsgebeurtenissen dekt in plaats van
+# alles op dezelfde diepte te loggen. Secrets/configmaps alleen op metadata-niveau (geen waardes in het
+# auditlog zelf), pod-exec/attach en RBAC-wijzigingen juist met het volledige request+response.
+apiVersion: audit.k8s.io/v1
+kind: Policy
+omitStages:
+  - "RequestReceived"
+rules:
+  - level: RequestResponse
+    resources:
+      - group: ""
+        resources: ["pods/exec", "pods/attach", "pods/portforward"]
+  - level: RequestResponse
+    resources:
+      - group: "rbac.authorization.k8s.io"
+        resources: ["roles", "rolebindings", "clusterroles", "clusterrolebindings"]
+  - level: Metadata
+    resources:
+      - group: ""
+        resources: ["secrets", "configmaps"]
+  - level: None
+    users: ["system:kube-proxy"]
+  - level: None
+    resources:
+      - group: ""
+        resources: ["events"]
+  - level: Metadata

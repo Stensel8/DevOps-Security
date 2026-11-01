@@ -46,12 +46,17 @@ spec:
             cpu: 500m
             memory: 256Mi
         # Readiness: pas verkeer naar de pod en pas "uitgerold" als de app echt antwoordt.
+        # timeoutSeconds/failureThreshold ruimer dan de k8s-default (1s/3x), want sinds week 6 draait
+        # er ook Prometheus en Trivy-operator op dezelfde kleine nodes; een korte CPU-piek daarvan
+        # moet de app niet meteen als "dood" laten bestempelen.
         readinessProbe:
           httpGet:
             path: /
             port: 5000
           initialDelaySeconds: 3
           periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 5
         # Liveness: herstart de container als de app later vastloopt.
         livenessProbe:
           httpGet:
@@ -59,6 +64,8 @@ spec:
             port: 5000
           initialDelaySeconds: 5
           periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 5
         volumeMounts:
           - name: data
             mountPath: /data
