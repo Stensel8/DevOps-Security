@@ -12,9 +12,9 @@ $ sudo ./kube-bench run --config-dir ./cfg
 
 Van de 5 FAIL's waren er geen Level 2 (allemaal Level 1: PKI-bestandsrechten, een paar RBAC-punten). Voor de opdracht heb ik drie Level 2-maatregelen uit drie verschillende control-families toegepast:
 
-**Family 5.7 (General Policies) — al aanwezig sinds week 2.** 5.7.2 (seccomp-profiel verplicht) en 5.7.3 (SecurityContext op pods) staan al in [kubernetes/deployment.yaml](../kubernetes/deployment.yaml) sinds de Snyk IaC-fixes in week 2 (2.2, fix 6): `seccompProfile: RuntimeDefault`, `runAsNonRoot`, capabilities drop, `allowPrivilegeEscalation: false`. kube-bench blijft dit als WARN melden omdat het een "Manual"-check is (vereist menselijke beoordeling van de pod-spec), maar de instelling staat er al.
+**Family 5.7 (General Policies), al aanwezig sinds week 2.** 5.7.2 (seccomp-profiel verplicht) en 5.7.3 (SecurityContext op pods) staan al in [kubernetes/deployment.yaml](../kubernetes/deployment.yaml) sinds de Snyk IaC-fixes in week 2 (2.2, fix 6): `seccompProfile: RuntimeDefault`, `runAsNonRoot`, capabilities drop, `allowPrivilegeEscalation: false`. kube-bench blijft dit als WARN melden omdat het een "Manual"-check is (vereist menselijke beoordeling van de pod-spec), maar de instelling staat er al.
 
-**Family 5.2 (Pod Security Standards) — nieuw.** De `default`-namespace afgedwongen op het "restricted" Pod Security-niveau:
+**Family 5.2 (Pod Security Standards), nieuw.** De `default`-namespace afgedwongen op het "restricted" Pod Security-niveau:
 
 ```
 $ kubectl label namespace default pod-security.kubernetes.io/enforce=restricted pod-security.kubernetes.io/enforce-version=latest
@@ -31,7 +31,7 @@ allowPrivilegeEscalation != false, unrestricted capabilities, runAsNonRoot != tr
 seccompProfile (must set securityContext.seccompProfile.type to "RuntimeDefault" or "Localhost")
 ```
 
-**Family 3.2 (Audit Logging) — nieuw.** K3s logde standaard niets van de API-server. Via [kubernetes/audit-policy.yaml](../kubernetes/audit-policy.yaml) en een `/etc/rancher/k3s/config.yaml` met `kube-apiserver-arg` heb ik audit logging aangezet, met een beleid dat juist op de interessante dingen let: `pods/exec`/`attach` en RBAC-wijzigingen volledig (`RequestResponse`), secrets/configmaps alleen op metadata-niveau (geen waardes in het logbestand zelf), de rest op metadata-niveau. Na `systemctl restart k3s` (cluster bleef Ready, geen downtime van de app):
+**Family 3.2 (Audit Logging), nieuw.** K3s logde standaard niets van de API-server. Via [kubernetes/audit-policy.yaml](../kubernetes/audit-policy.yaml) en een `/etc/rancher/k3s/config.yaml` met `kube-apiserver-arg` heb ik audit logging aangezet. Het beleid let juist op de interessante dingen: `pods/exec`/`attach` en RBAC-wijzigingen volledig (`RequestResponse`), secrets/configmaps alleen op metadata-niveau (geen waardes in het logbestand zelf), de rest op metadata-niveau. Na `systemctl restart k3s` bleef het cluster Ready, geen downtime van de app:
 
 ```
 $ kubectl exec deploy/devops-security -- id          # pods/exec -> RequestResponse, incl. responseObject
@@ -47,7 +47,7 @@ Opnieuw gedraaid na de fixes:
 
 Vijf bevindingen gingen van WARN naar PASS: `1.2.16/17/18/19` (audit-log-path, -maxage, -maxbackup, -maxsize) en `3.2.1` (minimaal auditbeleid aanwezig). `3.2.2` zelf blijft WARN omdat kube-bench die altijd handmatig laat beoordelen, maar de twee commando's hierboven laten zien dat het beleid daadwerkelijk doet wat het moet doen.
 
-**Containerd-maatregel zonder CIS-controle.** De CIS Kubernetes Benchmark zegt niets over de rechten op de containerd-socket zelf (`/run/k3s/containerd/containerd.sock`), terwijl wie dat socket kan aanspreken containers kan starten/stoppen met root-rechten op de node — een bekend escalatiepad dat de NSA/CISA Kubernetes Hardening Guidance wel noemt. Gecontroleerd dat die socket niet wereld-toegankelijk is:
+**Containerd-maatregel zonder CIS-controle.** De CIS Kubernetes Benchmark zegt niets over de rechten op de containerd-socket zelf (`/run/k3s/containerd/containerd.sock`). Wie dat socket kan aanspreken, kan containers starten en stoppen met root-rechten op de node: een bekend escalatiepad dat de NSA/CISA Kubernetes Hardening Guidance wel noemt. Gecontroleerd dat die socket niet wereld-toegankelijk is:
 
 ```
 $ ls -la /run/k3s/containerd/containerd.sock
@@ -58,7 +58,7 @@ Stond al goed (alleen root/root-group), dus hier was niets te fixen, maar wel de
 
 **Bronnen**
 
-- Center for Internet Security. (z.d.). *CIS Kubernetes Benchmark v1.8.0*. [../school docs/Week5/CIS Kubernetes Benchmark v1.8.0 PDF.pdf](../school%20docs/Week5/CIS%20Kubernetes%20Benchmark%20v1.8.0%20PDF.pdf)
+- Center for Internet Security. (z.d.). *CIS Kubernetes Benchmark v1.8.0*. [https://www.cisecurity.org/benchmark/kubernetes](https://www.cisecurity.org/benchmark/kubernetes)
 - Aqua Security. (z.d.). *kube-bench*. GitHub. [https://github.com/aquasecurity/kube-bench](https://github.com/aquasecurity/kube-bench)
 - The Kubernetes Authors. (z.d.). *Pod Security Standards*. [https://kubernetes.io/docs/concepts/security/pod-security-standards/](https://kubernetes.io/docs/concepts/security/pod-security-standards/)
 - The Kubernetes Authors. (z.d.). *Auditing*. [https://kubernetes.io/docs/tasks/debug/debug-cluster/audit/](https://kubernetes.io/docs/tasks/debug/debug-cluster/audit/)
@@ -112,7 +112,7 @@ Voor een cluster van deze omvang (twee nodes) is de ingebouwde policy-controller
 
 - SUSE / Rancher Labs. (z.d.). *K3s networking options*. [https://docs.k3s.io/networking](https://docs.k3s.io/networking)
 - flannel-io. (z.d.). *Flannel* [broncode]. GitHub. [https://github.com/flannel-io/flannel](https://github.com/flannel-io/flannel)
-- Isovalent / Cilium. (z.d.). *CNI chaining with Flannel*. [https://docs.cilium.io/en/stable/installation/cni-chaining-flannel/](https://docs.cilium.io/en/stable/installation/cni-chaining-flannel/)
+- Isovalent / Cilium. (z.d.). *CNI chaining*. [https://docs.cilium.io/en/stable/installation/cni-chaining/](https://docs.cilium.io/en/stable/installation/cni-chaining/)
 
 ### NetworkPolicy: alleen poort 5000
 
@@ -153,4 +153,4 @@ De drie belangrijkste hardeningspunten uit de room, voor SolidApps:
 
 1. **TLS op al het verkeer tussen de control-plane-componenten.** De kube-apiserver praat met zo ongeveer alles in het cluster (kubelet, etcd, zichzelf vanuit andere pods), en is daarbij zowel server als client. Staat dat verkeer niet versleuteld, dan kan iemand die al ergens in het netwerk zit meekijken of zich voordoen als een van die componenten. CIS-controls 1.2.24 t/m 1.2.27 gaan hier precies over.
 2. **RBAC met least privilege**, zoals ik in 7.2 ook toepas: geen brede rechten aan een service-account geven "voor het geval dat", maar precies het stukje dat nodig is. Een gekaapte pod met te veel rechten kan zo het hele cluster overnemen in plaats van alleen zichzelf.
-3. **Admission Controllers.** In gewone-mensen-taal: een soort portier bij de deur van het cluster. Voordat een pod mag starten, checkt die portier eerst of de pod aan de regels voldoet (bijvoorbeeld: niet als root, geen privileged mode). Voldoet de pod niet, dan mag hij het cluster niet eens in — niet "we zien het later wel of hij iets kapot maakt", maar hij start gewoon niet. Precies wat ik in 5.1 al in actie zag: de bewust onveilige test-pod (`privileged: true`) werd door Kubernetes' eigen Pod Security Admission geweigerd nog vóórdat hij kon draaien.
+3. **Admission Controllers.** In gewone-mensen-taal: een soort portier bij de deur van het cluster. Voordat een pod mag starten, checkt die portier eerst of de pod aan de regels voldoet (bijvoorbeeld: niet als root, geen privileged mode). Voldoet de pod niet, dan mag hij het cluster niet eens in. Niet "we zien het later wel of hij iets kapot maakt", maar hij start gewoon niet. Precies wat ik in 5.1 al in actie zag: de bewust onveilige test-pod (`privileged: true`) werd door Kubernetes' eigen Pod Security Admission geweigerd nog vóórdat hij kon draaien.

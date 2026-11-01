@@ -2,7 +2,7 @@
 
 ## 7.1 OS-hardening op CN1 en CN2
 
-De nodes draaien Ubuntu 26.04 LTS, dus de CIS Ubuntu Linux Benchmark is van toepassing (zie `school docs/Week7/`). Ik heb drie Level 2-maatregelen toegepast, uit drie verschillende control-families, op beide nodes.
+De nodes draaien Ubuntu 26.04 LTS, dus de CIS Ubuntu Linux Benchmark is van toepassing. Ik heb drie Level 2-maatregelen toegepast, uit drie verschillende control-families, op beide nodes.
 
 Eerst de ongebruikte filesystem-kernelmodules uitgeschakeld (CIS 1.1.x, bestandssystemen). `cramfs` en `udf` gebruik ik op deze VM's toch niet, en een kwetsbaarheid in zo'n weinig gebruikte module is een onnodig aanvalsoppervlak.
 
@@ -48,7 +48,7 @@ cn2    Ready    <none>          v1.37.0+k3s1
 
 **Bronnen**
 
-- Center for Internet Security. (z.d.). *CIS Ubuntu Linux 22.04 LTS Benchmark* (v1.0.0). [../school docs/Week7/CIS_Ubuntu_Linux_22.04_LTS_Benchmark_v1.0.0.pdf](../school%20docs/Week7/CIS_Ubuntu_Linux_22.04_LTS_Benchmark_v1.0.0.pdf)
+- Center for Internet Security. (z.d.). *CIS Ubuntu Linux Benchmark* (v1.0.0). [https://www.cisecurity.org/benchmark/ubuntu_linux](https://www.cisecurity.org/benchmark/ubuntu_linux)
 - Canonical. (z.d.). *modprobe.d(5) – Ubuntu manpages*. [https://manpages.ubuntu.com/manpages/noble/man5/modprobe.d.5.html](https://manpages.ubuntu.com/manpages/noble/man5/modprobe.d.5.html)
 - Boelen, M. (z.d.). *Auditd*. Linux Audit. [https://linux-audit.com/auditd/](https://linux-audit.com/auditd/)
 - OpenBSD Project. (z.d.). *sshd_config(5)*. [https://man.openbsd.org/sshd_config](https://man.openbsd.org/sshd_config)

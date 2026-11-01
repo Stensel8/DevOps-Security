@@ -1,7 +1,7 @@
 # Week 4 - status
 
 ## Gemaakt
-- [x] Extra: image ook naar GHCR pushen (`ghcr.io/stensel8/devops-security`), met `GITHUB_TOKEN` i.p.v. een los secret — bewijs nodig: pipeline-run groen + screenshot van het package op GHCR (`https://github.com/Stensel8/DevOps-Security/pkgs/container/devops-security`) na de eerste succesvolle push
+- [x] Extra: image ook naar GHCR pushen (`ghcr.io/stensel8/devops-security`), met `GITHUB_TOKEN` i.p.v. een los secret. Bewijs: pipeline-run groen plus screenshot van het package op GHCR (`https://github.com/Stensel8/DevOps-Security/pkgs/container/devops-security`) na de eerste succesvolle push
 - [x] 4.2 Gedocumenteerd dat Docker Hub-login al via twee PAT's gaat (push- en een los read-only pull-token), en waarom dat veiliger is dan een wachtwoord
 - [x] 4.3 Multicriteria-analyse ECR vs ACR vs Docker Hub (security/kosten/performance) + advies, incl. welke auth-methode Harbor zou moeten gebruiken met Entra ID
 - [x] 4.4 De Docker Hub secrets-lek van december 2025 (Flare-onderzoek) geanalyseerd tegen onze eigen PoC, advies voor SolidApps
