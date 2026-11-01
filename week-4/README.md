@@ -4,6 +4,8 @@
 
 Een losse EC2-instance (`t2.large`, Ubuntu 26.04, zelfde sleutelpaar als CN1/CN2) naast het K3s-cluster, want Harbor's eigen docker-compose-stack (registry, portal, core, redis, postgres) wil niet concurreren met K3s op een al kleine `t2.medium`.
 
+<img src="images/ec2-launch-harbor.png" alt="Launch instance: Ubuntu 26.04, t2.large, 80 GiB" width="720">
+
 <img src="images/ec2-keypair-selectie.png" alt="Zelfde sleutelpaar hergebruikt voor de Harbor-instance" width="400">
 
 Geïnstalleerd via een EC2 user-data-script ([kubernetes/harbor/harbor-userdata.sh](../kubernetes/harbor/harbor-userdata.sh)) dat zichzelf bij de eerste boot installeert: Docker, een self-signed TLS-certificaat op de eigen publieke hostname (opgezocht via de instance-metadata, IMDSv2), en de Harbor offline-installer. Het admin-wachtwoord genereert het script zelf en zet het lokaal in `/root/harbor-admin-password.txt` weg, nooit in de user-data zelf (die is in platte tekst leesbaar via de AWS-console/CLI).

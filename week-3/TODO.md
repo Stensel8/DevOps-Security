@@ -12,7 +12,7 @@
 - [x] 3.7 Advies: proces voor veilige images en teststrategie, met tooling-advies
 
 ## Nog te doen
-Geen, week 3 is compleet. De Postman-tests zijn lokaal getest tegen het image; de echte pipeline-run met de nieuwe `Run the Postman tests`-stap moet nog een keer groen bevestigd worden na een push naar `main`.
+Geen, week 3 is compleet. De Postman-tests zijn zowel lokaal als in de echte pipeline-run bevestigd groen (screenshot in README.md).
 
 ---
 Hier houd ik bij wat ik nog moet doen.
