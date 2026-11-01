@@ -223,6 +223,10 @@ $ docker run --rm --network host -v "$PWD/tests/postman:/etc/newman" postman/new
   assertions: 6, failed: 0
 ```
 
+En bevestigd in de echte `Test`-job van de pipeline, tegen het net gebouwde image op de GitHub-runner:
+
+<img src="images/postman-pipeline-groen.png" alt="Run the Postman tests in de pipeline: alle 6 assertions geslaagd" width="720">
+
 ## 3.7 Advies: veilige images en teststrategie
 
 Voor SolidApps zou ik dezelfde opbouw aanhouden die nu in deze pipeline staat, als vast proces per build:
