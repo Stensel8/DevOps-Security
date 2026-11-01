@@ -145,4 +145,12 @@ En op de nodes zelf: elke engineer een eigen account met een eigen sleutel, sudo
 
 Dit is hetzelfde idee als mijn advies in 2.3 en 4.3: een centrale identiteit (IAM-rol, Entra ID of een eigen sleutel) in plaats van een gedeeld geheim dat overal hetzelfde blijft en bij een lek overal opnieuw moet.
 
-TryHackMe "Cluster Hardening" (task 8 overgeslagen) en de drie belangrijkste hardeningspunten voor SolidApps: nog te doen.
+De TryHackMe-room "Cluster Hardening" doorlopen (100%, alle 8 taken, inclusief de praktische opdracht):
+
+<img src="images/tryhackme-cluster-hardening-voltooid.png" alt="TryHackMe Cluster Hardening: room completed 100%, alle taken afgevinkt" width="720">
+
+De drie belangrijkste hardeningspunten uit de room, voor SolidApps:
+
+1. **TLS op al het verkeer tussen de control-plane-componenten.** De kube-apiserver praat met zo ongeveer alles in het cluster (kubelet, etcd, zichzelf vanuit andere pods), en is daarbij zowel server als client. Staat dat verkeer niet versleuteld, dan kan iemand die al ergens in het netwerk zit meekijken of zich voordoen als een van die componenten. CIS-controls 1.2.24 t/m 1.2.27 gaan hier precies over.
+2. **RBAC met least privilege**, zoals ik in 7.2 ook toepas: geen brede rechten aan een service-account geven "voor het geval dat", maar precies het stukje dat nodig is. Een gekaapte pod met te veel rechten kan zo het hele cluster overnemen in plaats van alleen zichzelf.
+3. **Admission Controllers.** In gewone-mensen-taal: een soort portier bij de deur van het cluster. Voordat een pod mag starten, checkt die portier eerst of de pod aan de regels voldoet (bijvoorbeeld: niet als root, geen privileged mode). Voldoet de pod niet, dan mag hij het cluster niet eens in — niet "we zien het later wel of hij iets kapot maakt", maar hij start gewoon niet. Precies wat ik in 5.1 al in actie zag: de bewust onveilige test-pod (`privileged: true`) werd door Kubernetes' eigen Pod Security Admission geweigerd nog vóórdat hij kon draaien.
