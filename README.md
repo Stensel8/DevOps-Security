@@ -14,6 +14,8 @@ Ik werk hierbij met AI-assistentie, via IDE-integraties. De opzet, keuzes en het
 - Anthropic. (2026). *Claude (Sonnet 5)* [Large language model]. [https://claude.ai](https://claude.ai)
 - Mistral AI. (2026). *Mistral Vibe (GLM 5.3)* [Large language model]. [https://mistral.ai](https://mistral.ai)
 
+**PDF/ODT-export van deze portfolio.** Bij elke push naar `main` zet een GitHub Actions-workflow ([`.github/workflows/docs.yml`](.github/workflows/docs.yml)) automatisch een PDF en een ODT klaar met alle informatie uit de repo, als assets bij een nieuwe [release](../../releases). Ik heb deze exports dus niet zelf handmatig gemaakt; ze worden automatisch gegenereerd vanuit de README's via [`setup/export-portfolio.sh`](setup/export-portfolio.sh) (pandoc + typst).
+
 De repository staat ook gespiegeld op [CodeTrunk](https://repos.codetrunk.eu/Stensel8/DevOps-Security), een Europese Git-host met IPv6-ondersteuning: voor redundantie en omdat ik niet alles alleen op GitHub (VS) wil hebben staan.
 
 - [Casus](case/README.md)

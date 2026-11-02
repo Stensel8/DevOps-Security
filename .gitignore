@@ -9,3 +9,10 @@ app/access.log
 # macOS
 .DS_Store
 /state
+
+# Portfolio-exports (setup/export-portfolio.sh), lokaal gegenereerd
+*.pdf
+*.odt
+
+# Gegenereerd door setup/build_bibliography.py (bron: de README's zelf)
+setup/bibliography.bib

@@ -1,0 +1,75 @@
+name: Docs
+
+# Bouwt bij elke push naar main een PDF/A + ODT van de hele portfolio (setup/export-portfolio.sh)
+# en zet die als assets bij een nieuwe, getimestampte GitHub Release. Zo hoef ik zelf nooit meer
+# een export te maken: de README's zijn de enige bron van waarheid, dit volgt daar automatisch uit.
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+# Alleen de release-stap heeft schrijfrechten nodig (een release aanmaken + assets uploaden).
+permissions:
+  contents: write
+
+jobs:
+  build-docs:
+    name: Build and release docs
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      # ImageMagick voor de avif->png-conversie in export-portfolio.sh (typst kan geen avif tonen).
+      # xz-utils voor het uitpakken van de typst-tarball (.tar.xz).
+      - name: Install ImageMagick and xz-utils
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends imagemagick xz-utils
+
+      # Pandoc en typst als los, gepind binary (release tarball + checksum), zelfde patroon als
+      # de uv-install in build.yaml: geen Action van een derde partij voor iets dat net zo
+      # makkelijk met curl + een checksum-check kan.
+      - name: Install pandoc
+        run: |
+          set -euo pipefail
+          curl -sL -o pandoc.tar.gz https://github.com/jgm/pandoc/releases/download/3.13/pandoc-3.13-linux-amd64.tar.gz
+          echo "38aa33b325a2bc96a4c39409631212db55702f564250bcdbead180b3bf646389  pandoc.tar.gz" | sha256sum -c
+          sudo tar xzf pandoc.tar.gz --strip-components=1 -C /usr/local
+
+      - name: Install typst
+        run: |
+          set -euo pipefail
+          curl -sL -o typst.tar.xz https://github.com/typst/typst/releases/download/v0.15.1/typst-x86_64-unknown-linux-musl.tar.xz
+          echo "a6d077d0a95eed5a2eba715b2dae06be954f624ccbf85758a03f389ded33118c  typst.tar.xz" | sha256sum -c
+          tar xJf typst.tar.xz
+          sudo install -m 0755 typst-x86_64-unknown-linux-musl/typst /usr/local/bin/typst
+
+      - name: Build the PDF/A and ODT
+        run: ./setup/export-portfolio.sh
+
+      # UTC-timestamp + korte commit-sha: uniek per run, leesbaar, geen rare tekens voor
+      # bestandsnamen of git-tags (dus geen ':' zoals in een gewone ISO-tijdnotatie).
+      - name: Determine the release tag
+        id: stamp
+        run: |
+          echo "stamp=docs-$(date -u +'%Y-%m-%d_%H-%M-%S')-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - name: Rename the exports with the timestamp
+        env:
+          STAMP: ${{ steps.stamp.outputs.stamp }}
+        run: |
+          set -euo pipefail
+          name="$(basename "$GITHUB_REPOSITORY")"
+          mv "${name}.pdf" "${STAMP}.pdf"
+          mv "${name}.odt" "${STAMP}.odt"
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          STAMP: ${{ steps.stamp.outputs.stamp }}
+        run: |
+          set -euo pipefail
+          gh release create "$STAMP" \
+            --title "Portfolio-export $STAMP" \
+            --notes "Automatisch gegenereerd uit commit ${GITHUB_SHA} op main, via pandoc + typst (zie setup/export-portfolio.sh). Geen handmatige export; de README's zijn de bron." \
+            --prerelease \
+            "${STAMP}.pdf" "${STAMP}.odt"

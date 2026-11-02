@@ -54,6 +54,8 @@ flowchart LR
     C --> D[("Docker Hub<br/>stensel8/devops-security")]
 ```
 
+![Build-diagram: python:3.14-alpine naar builder-stage (Poetry) en runtime-stage, alleen de venv gaat van builder naar runtime, runtime naar Docker Hub](images/docker-build-stages.svg)
+
 De twee `FROM`-regels in de [Dockerfile](../Dockerfile) zijn bewust: elke `FROM` begint een nieuw, schoon image. `COPY --from=builder` haalt alleen `/app/.venv` uit de builder. Pip haal ik uit de runtime, want de app heeft het niet nodig en scanners melden de gebundelde onderdelen (msgpack, setuptools). De builder draait als root, maar die stage komt niet in het image dat draait.
 
 ```dockerfile
