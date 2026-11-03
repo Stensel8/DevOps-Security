@@ -1,52 +1,31 @@
-# Week 6
+# Week 6: Monitoring, traceability en pentesten
+
+In deze week staat het zicht op de omgeving centraal. Een cluster kan goed beveiligd zijn op het moment dat het wordt opgezet, maar daarna verandert er van alles: er komen nieuwe versies, nieuwe kwetsbaarheden en soms ook aanvallers. Om dat op te merken zijn drie dingen nodig. Monitoring laat zien of alles op dit moment goed draait. Traceability laat zien wat er precies in een workload zit, ook achteraf. Pentesten laat zien hoe het systeem zich gedraagt als iemand het actief aanvalt.
+
+Deze week bestaat uit drie opdrachten. Paragraaf 6.1 beschrijft de installatie van Prometheus en twee alerts die relevant zijn voor security. Paragraaf 6.2 gaat over traceability met de Trivy Operator, en paragraaf 6.3 bevat een advies aan SolidApps over geautomatiseerd pentesten.
 
 ## 6.1 Prometheus en twee security-relevante alerts
 
-Prometheus geïnstalleerd met de `kube-prometheus-stack` Helm-chart (Prometheus, Alertmanager, Grafana, kube-state-metrics en node-exporter in één), met wat lagere resource-limieten omdat de nodes maar 4 GB RAM hebben:
+Voor deze opdracht heb ik Prometheus geïnstalleerd. Prometheus is een open-source systeem voor monitoring en alerting. Het haalt op vaste momenten meetgegevens op bij de onderdelen van een systeem, slaat die op als tijdreeksen, en kan op basis van regels een alert versturen [(Prometheus Authors, z.d.-b)](https://prometheus.io/docs/introduction/overview/).
+
+Ik heb de Helm-chart `kube-prometheus-stack` gebruikt. Die installeert in één keer Prometheus, Alertmanager, Grafana, kube-state-metrics en node-exporter [(Prometheus Community, z.d.)](https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack). Omdat de nodes maar 4 GB geheugen hebben, heb ik de geheugenlimieten verlaagd en de gegevens maar één dag laten bewaren:
 
 ```bash
-helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
 helm install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
   -n monitoring --create-namespace \
-  --set prometheus.prometheusSpec.retention=1d \
-  --set prometheus.prometheusSpec.resources.requests.memory=256Mi \
-  --set prometheus.prometheusSpec.resources.limits.memory=512Mi \
-  --set grafana.resources.requests.memory=128Mi \
-  --set grafana.resources.limits.memory=256Mi
+  --set prometheus.prometheusSpec.retention=1d
 ```
 
-node-exporter draait als DaemonSet, dus op beide nodes:
+node-exporter verzamelt de gegevens van de nodes zelf, zoals CPU en geheugen, en draait op beide nodes. Naast de alerts die de chart standaard meelevert, heb ik in [kubernetes/prometheus-alerts.yaml](../kubernetes/prometheus-alerts.yaml) twee eigen alertregels gemaakt [(Prometheus Authors, z.d.-a)](https://prometheus.io/docs/prometheus/latest/configuration/alerting_rules/):
 
-```
-$ kubectl get pods -n monitoring -o wide | grep node-exporter
-kube-prometheus-stack-prometheus-node-exporter-wtgn8   1/1   Running   0   cn2
-kube-prometheus-stack-prometheus-node-exporter-z68h8   1/1   Running   0   cn1
-```
+- **`QuoterXPHerhaaldeRestarts`:** gaat af als de pod van de app binnen 15 minuten opnieuw is gestart. Dat kan een gewone crash zijn, maar het is ook wat je ziet als iemand een kwetsbaarheid in de app misbruikt waardoor die onderuitgaat.
+- **`NodeHoogCPUGebruik`:** gaat af als een node langer dan 2 minuten boven de 80% CPU zit. Dat is op zich onschuldig, maar zo valt ook een proces op dat er niet hoort.
 
-Twee eigen, security-relevante alerts gezet in [kubernetes/prometheus-alerts.yaml](../kubernetes/prometheus-alerts.yaml), naast de alerts die de chart al standaard meelevert. `QuoterXPHerhaaldeRestarts` gaat af als de app-pod binnen 15 minuten herstart: kan een gewone crash zijn, maar is ook precies wat je zou zien als iemand een kwetsbaarheid in de app raakt waardoor hij onderuitgaat. En `NodeHoogCPUGebruik` gaat af als een node langer dan 2 minuten boven de 80% CPU zit. Op zich onschuldig, maar wel het soort signaal waarmee je een proces opmerkt dat daar niet hoort te draaien.
-
-```bash
-kubectl apply -f kubernetes/prometheus-alerts.yaml
-```
-
-Om de eerste alert echt te laten afgaan heb ik de app-container laten crashen (niet de pod verwijderd, want dan maakt de Deployment gewoon een nieuwe pod met restart-teller op 0; dit raakt de teller van de bestaande pod):
-
-```
-$ kubectl exec deploy/devops-security -- kill 1
-$ kubectl get pods -l app=quoterxp
-NAME                               READY   STATUS    RESTARTS      AGE
-devops-security-6fdcbf5c57-xnfqn   1/1     Running   1 (7s ago)    23s
-```
-
-Een paar minuten later (de regel heeft `for: 1m`, plus de scrape-interval) staat de alert op `firing` in de Prometheus-API:
+Om de eerste alert echt te laten afgaan, heb ik het hoofdproces in de container van de app gestopt. Ik heb de pod bewust niet verwijderd, want dan maakt de Deployment een nieuwe pod met een teller op 0. Een paar minuten later stond de alert in Prometheus op `firing`:
 
 ```json
 {
-  "labels": { "alertname": "QuoterXPHerhaaldeRestarts", "pod": "devops-security-6fdcbf5c57-xnfqn", "severity": "warning" },
-  "annotations": {
-    "description": "Onverwachte restart van de app-pod. Even de pod-logs checken waarom.",
-    "summary": "devops-security pod is herstart"
-  },
+  "labels": { "alertname": "QuoterXPHerhaaldeRestarts", "severity": "warning" },
   "state": "firing",
   "activeAt": "2026-11-01T17:53:19.163Z"
 }
@@ -54,53 +33,47 @@ Een paar minuten later (de regel heeft `for: 1m`, plus de scrape-interval) staat
 
 ## 6.2 Traceability met Trivy
 
-Monitoring (6.1) vertelt je of iets nu goed draait: is de pod up, hoeveel CPU gebruikt een node. Traceability vertelt je iets anders: kun je terugvinden wát er in een workload zit en waarom dat daar hoort te staan, ook achteraf. Bij een traditionele server installeer je een package en ben je het overzicht kwijt zodra iemand anders inlogt en iets toevoegt. In Kubernetes draait alles van een image met een vaste digest, dus je kunt op elk moment opnieuw vaststellen wat er precies in een pod zit, zonder op de node zelf te hoeven kijken.
+Monitoring laat zien of iets op dit moment goed draait: is de pod bereikbaar, en hoeveel CPU gebruikt een node. Traceability gaat over iets anders: kan worden teruggevonden wat er in een workload zit, en waarom het daar staat, ook achteraf. Op een traditionele server raak je dat overzicht kwijt zodra iemand inlogt en iets installeert. In Kubernetes draait alles vanaf een image met een vaste digest. Daardoor is op elk moment vast te stellen wat er in een pod zit, zonder op de node zelf te kijken.
 
-De Trivy-operator doet dat continu voor het hele cluster, niet alleen voor ons eigen image:
+Voor deze opdracht heb ik de Trivy Operator geïnstalleerd. De Trivy Operator draait in het cluster en scant de workloads daar doorlopend, in plaats van één keer in de pipeline [(Aqua Security, z.d.-b)](https://aquasecurity.github.io/trivy-operator/latest/). Dat geldt voor alle workloads, dus ook voor die van Prometheus en van K3s zelf.
 
-```bash
-helm repo add aqua https://aquasecurity.github.io/helm-charts
-helm install trivy-operator aqua/trivy-operator -n trivy-system --create-namespace \
-  --set trivy.resources.requests.memory=100Mi --set trivy.resources.limits.memory=300Mi
-```
-
-Voor elke workload in elke namespace komt er een `VulnerabilityReport`:
+Voor elke workload maakt de operator een `VulnerabilityReport`. Het eigen image heeft 0 kwetsbaarheden, net als bij Docker Scout in week 3. Daarnaast maakt de operator een `ConfigAuditReport`. Dat is geen scan van het image, maar een controle van de Kubernetes-objecten zelf, zoals de Deployment en de Service [(Aqua Security, z.d.-a)](https://aquasecurity.github.io/trivy-operator/latest/docs/crds/configaudit-report/). Bij de Deployment van de app vond hij twee punten:
 
 ```
-$ kubectl get vulnerabilityreports -A
-NAMESPACE     NAME                                          REPOSITORY                     TAG
-default       replicaset-devops-security-...-quoterxp       stensel8/devops-security       ce54d349...
-kube-system   daemonset-svclb-traefik-...                    rancher/klipper-lb             v0.4.17
-monitoring    statefulset-...                                prometheus/prometheus          v3.15.1-distroless
-...
-
-$ kubectl get vulnerabilityreport -n default replicaset-devops-security-d5cd6948-quoterxp -o jsonpath='{.report.summary}'
-{"criticalCount":0,"highCount":0,"lowCount":0,"mediumCount":0,"noneCount":0,"unknownCount":0}
-```
-
-Ons eigen image staat op 0, wat overeenkomt met Docker Scout in week 3. Trivy-operator maakt daarnaast ook `ConfigAuditReport`'s: geen imagescans, maar checks op de Kubernetes-objecten zelf (Deployment, Service, Ingress, NetworkPolicy). Die vond twee echte dingen bij onze eigen Deployment:
-
-```
-$ kubectl get configauditreport -n default replicaset-devops-security-d5cd6948 -o jsonpath='{range .report.checks[?(@.success==false)]}{.checkID}: {.title} ({.severity}){"\n"}{end}'
 AVD-KSV-0110: Workloads in the default namespace (LOW)
 AVD-KSV-0125: Restrict container images to trusted registries (MEDIUM)
 ```
 
-De eerste is precies wat ik in week 5 (CIS 5.7.4) ook al tegenkwam: de app draait in `default` in plaats van een eigen namespace. Mooi dat twee verschillende tools (kube-bench en Trivy-operator) onafhankelijk van elkaar dezelfde conclusie trekken. De tweede komt doordat Trivy-operator standaard alleen een kleine lijst "vertrouwde" registries kent en Docker Hub daar niet automatisch in zit; dat is geen fout in mijn setup, maar een instelling die ik bewust zou aanpassen (`trivyOperator.trivy.trustedRegistries`) als ik dit echt in productie zou gebruiken.
+Het eerste punt is dat de app in de namespace `default` draait in plaats van in een eigen namespace. Dat staat ook in de CIS Kubernetes Benchmark, bij aanbeveling 5.7.4. Twee verschillende tools komen hier dus los van elkaar tot dezelfde conclusie. Het tweede punt gaat over het beperken van images tot vertrouwde registries. Dat is in deze opstelling niet ingesteld, en zou ik in productie wel doen.
 
 ## 6.3 Geautomatiseerd pentesten bij SolidApps
 
-Scanners zoals Snyk, CodeQL, Trivy en Docker Scout (week 2 en 3) vinden bekende kwetsbaarheden in code en images, maar testen niet actief hoe het systeem zich gedraagt onder aanval. Dat is het gat dat geautomatiseerd pentesten opvult.
+Scanners zoals Snyk, CodeQL, Trivy en Docker Scout uit week 2 en 3 vinden bekende kwetsbaarheden in code en images. Ze testen niet hoe het systeem zich gedraagt als iemand het actief aanvalt. Dat gat vult geautomatiseerd pentesten. In deze paragraaf geef ik SolidApps advies over drie soorten tools.
 
-Tegen de draaiende app zou ik OWASP ZAP inzetten, in baseline- of full-scan-modus, in de pipeline na Deploy, tegen de net uitgerolde omgeving (zelfde gedachte als mijn advies in 3.7). Die vindt dingen zoals ontbrekende headers, kwetsbare endpoints en verkeerde cookie-instellingen, van buitenaf, zoals een aanvaller het ook zou zien. Op clusterniveau test kube-hunter actief tegen een live Kubernetes-cluster (API-server, kubelet, open poorten), in plaats van statisch de manifests te lezen zoals kube-bench en Trivy config doen. Dat is een actieve aanval, dus die zou ik gepland laten draaien, bijvoorbeeld wekelijks zoals de Trivy-cron in [trivy.yml](../.github/workflows/trivy.yml), en alleen tegen een testcluster, nooit ongepland tegen productie. Voor webapplicatie-fuzzing is Nuclei handig, met community-templates voor bekende CVE's en misconfiguraties, snel genoeg om op elke deploy naar een testomgeving te draaien.
+- **DAST tegen de draaiende app:** ZAP test een webapplicatie van buitenaf, zoals een aanvaller dat ook zou doen. De baseline scan van ZAP voert geen echte aanvallen uit, maar kijkt passief naar wat de applicatie teruggeeft, en is daardoor geschikt voor een pipeline [(ZAP, z.d.)](https://www.zaproxy.org/docs/docker/baseline-scan/). Ik zou die na Deploy laten lopen, tegen de net uitgerolde testomgeving.
+- **Het cluster zelf testen:** hiervoor werd vaak kube-hunter gebruikt, maar die tool wordt niet meer onderhouden. Aqua Security raadt nu Trivy aan voor het scannen van Kubernetes-clusters [(Aqua Security, z.d.-c)](https://github.com/aquasecurity/kube-hunter). Een alternatief is Kubescape, dat een draaiend cluster toetst aan frameworks met controles en ook kwetsbaarheden in het cluster in kaart brengt [(Kubescape Authors, z.d.)](https://kubescape.io/docs/). Zo'n scan zou ik gepland laten draaien, bijvoorbeeld wekelijks, net als de scan in [trivy.yml](../.github/workflows/trivy.yml) die elke maandagochtend draait.
+- **Snelle controles met templates:** Nuclei is een scanner die werkt met templates van de community, voor bekende kwetsbaarheden en fouten in de configuratie [(ProjectDiscovery, z.d.)](https://github.com/projectdiscovery/nuclei). Die kan bij elke uitrol naar een testomgeving draaien.
 
-Voorwaarde voor dit alles: altijd tegen een test- of staging-omgeving, nooit tegen productie zonder change window en toestemming vooraf, en de scanresultaten in hetzelfde Security-tabblad als CodeQL en Trivy, zodat het team niet drie verschillende plekken hoeft na te kijken.
+Daarbij gelden twee voorwaarden. Ten eerste test SolidApps altijd tegen een test- of stagingomgeving, en nooit tegen productie zonder toestemming en een afgesproken moment. Ten tweede komen de resultaten op dezelfde plek als die van CodeQL en Trivy, zoals het Security-tabblad van GitHub, zodat het team niet op drie plekken hoeft te kijken.
 
-Tooling-advies: OWASP ZAP voor DAST in de pipeline, kube-hunter periodiek tegen een testcluster, Nuclei voor snelle, template-gebaseerde checks op elke deploy. Voor een jaarlijkse, diepere controle blijft een externe, menselijke pentest nodig: geautomatiseerde tools vinden bekende patronen, geen logica- of ketenfouten die een mens wel ziet.
+Geautomatiseerde tools vinden bekende patronen, maar fouten in de logica van een applicatie vinden ze meestal niet. Mijn advies is daarom om daarnaast regelmatig een pentest door een mens te laten uitvoeren.
 
-**Bronnen**
+## Bronnen
 
-- OWASP Foundation. (z.d.). *OWASP ZAP*. [https://www.zaproxy.org/](https://www.zaproxy.org/)
-- OWASP Foundation. (z.d.). *ZAP Baseline Scan (Docker)*. [https://www.zaproxy.org/docs/docker/baseline-scan/](https://www.zaproxy.org/docs/docker/baseline-scan/)
-- Aqua Security. (z.d.). *kube-hunter*. GitHub. [https://github.com/aquasecurity/kube-hunter](https://github.com/aquasecurity/kube-hunter)
-- ProjectDiscovery. (z.d.). *Nuclei*. GitHub. [https://github.com/projectdiscovery/nuclei](https://github.com/projectdiscovery/nuclei)
+Aqua Security. (z.d.-a). *ConfigAuditReport*. Trivy Operator. https://aquasecurity.github.io/trivy-operator/latest/docs/crds/configaudit-report/
+
+Aqua Security. (z.d.-b). *Home*. Trivy Operator. https://aquasecurity.github.io/trivy-operator/latest/
+
+Aqua Security. (z.d.-c). *kube-hunter* \[Broncode\]. GitHub. https://github.com/aquasecurity/kube-hunter
+
+Kubescape Authors. (z.d.). *Documentation overview*. Kubescape. https://kubescape.io/docs/
+
+ProjectDiscovery. (z.d.). *Nuclei* \[Broncode\]. GitHub. https://github.com/projectdiscovery/nuclei
+
+Prometheus Authors. (z.d.-a). *Alerting rules*. Prometheus. https://prometheus.io/docs/prometheus/latest/configuration/alerting_rules/
+
+Prometheus Authors. (z.d.-b). *Overview*. Prometheus. https://prometheus.io/docs/introduction/overview/
+
+Prometheus Community. (z.d.). *kube-prometheus-stack* \[Broncode\]. GitHub. https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack
+
+ZAP. (z.d.). *ZAP: Baseline scan*. https://www.zaproxy.org/docs/docker/baseline-scan/

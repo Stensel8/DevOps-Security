@@ -1,148 +1,149 @@
-# Week 5
+# Week 5: Kubernetes hardenen
 
-## 5.1 kube-bench: baseline en drie Level 2-maatregelen
+In deze week staat de beveiliging van het Kubernetes-cluster zelf centraal. Een standaardinstallatie van Kubernetes werkt direct, maar is niet op alle punten veilig ingesteld. Hardenen betekent dat die instellingen strenger worden gemaakt, zodat een aanvaller minder mogelijkheden heeft.
 
-Baseline op CN1 (control plane), met de k3s-specifieke benchmark van kube-bench:
+Voor het hardenen van Kubernetes bestaat de CIS Kubernetes Benchmark: een lijst met aanbevolen instellingen voor de onderdelen van een cluster [(Center for Internet Security, z.d.)](https://www.cisecurity.org/benchmark/kubernetes). Daarnaast hebben de NSA en CISA een richtlijn gepubliceerd die onder andere ingaat op de beveiliging van pods, netwerkscheiding, authenticatie en autorisatie, en audit logging [(National Security Agency & Cybersecurity and Infrastructure Security Agency, 2022)](https://media.defense.gov/2022/Aug/29/2003066362/-1/-1/0/CTR_KUBERNETES_HARDENING_GUIDANCE_1.2_20220829.PDF).
+
+Deze week bestaat uit vier opdrachten. Paragraaf 5.1 beschrijft de controle van het cluster met kube-bench en drie maatregelen uit de benchmark. Paragraaf 5.2 gaat over een Ingress met TLS, en paragraaf 5.3 over het netwerkplugin van K3s en de vraag of dat veilig genoeg is. Paragraaf 5.4 beschrijft hoe SolidApps toegang kan regelen zonder gedeeld adminwachtwoord.
+
+## 5.1 kube-bench: nulmeting en drie maatregelen
+
+Voor deze opdracht heb ik kube-bench gebruikt. kube-bench is een tool van Aqua Security die een cluster automatisch controleert op de aanbevelingen uit de CIS Kubernetes Benchmark [(Aqua Security, z.d.)](https://github.com/aquasecurity/kube-bench). Een aparte CIS-benchmark voor K3s bestaat niet: K3s wordt getoetst aan de gewone CIS Kubernetes Benchmark. Wel heeft kube-bench een eigen configuratie voor K3s. Die is nodig omdat K3s de onderdelen van Kubernetes anders inricht dan een standaardinstallatie. Ze draaien samen in het k3s-proces, met andere bestandspaden; etcd zit bijvoorbeeld in het k3s-proces zelf [(K3s Project Authors, z.d.-b)](https://docs.k3s.io/security/self-assessment-1.8). Met de standaardconfiguratie vindt kube-bench die onderdelen niet.
+
+De nulmeting op CN1, de control plane, gaf het volgende resultaat:
 
 ```
-$ sudo ./kube-bench run --config-dir ./cfg
-== Summary total ==
 54 checks PASS, 5 checks FAIL, 57 checks WARN, 14 checks INFO
 ```
 
-Van de 5 FAIL's waren er geen Level 2 (allemaal Level 1: PKI-bestandsrechten, een paar RBAC-punten). Voor de opdracht heb ik drie Level 2-maatregelen uit drie verschillende control-families toegepast:
+De vijf meldingen met FAIL gingen onder andere over de rechten op certificaatbestanden en een paar punten in RBAC. Voor de opdracht heb ik drie maatregelen toegepast, uit drie verschillende onderdelen van de benchmark.
 
-**Family 5.7 (General Policies) — al aanwezig sinds week 2.** 5.7.2 (seccomp-profiel verplicht) en 5.7.3 (SecurityContext op pods) staan al in [kubernetes/deployment.yaml](../kubernetes/deployment.yaml) sinds de Snyk IaC-fixes in week 2 (2.2, fix 6): `seccompProfile: RuntimeDefault`, `runAsNonRoot`, capabilities drop, `allowPrivilegeEscalation: false`. kube-bench blijft dit als WARN melden omdat het een "Manual"-check is (vereist menselijke beoordeling van de pod-spec), maar de instelling staat er al.
+### Onderdeel 5.7: algemene policies
 
-**Family 5.2 (Pod Security Standards) — nieuw.** De `default`-namespace afgedwongen op het "restricted" Pod Security-niveau:
+De aanbevelingen 5.7.2 (een seccomp-profiel voor pods) en 5.7.3 (een SecurityContext voor pods en containers) waren al ingevoerd in week 2, bij fix 6. In [kubernetes/deployment.yaml](../kubernetes/deployment.yaml) staan onder andere `seccompProfile: RuntimeDefault`, `runAsNonRoot` en `allowPrivilegeEscalation: false`. kube-bench blijft deze punten als WARN melden, omdat het handmatige controles zijn die een mens moet beoordelen. De instellingen staan er wel.
 
-```
-$ kubectl label namespace default pod-security.kubernetes.io/enforce=restricted pod-security.kubernetes.io/enforce-version=latest
-namespace/default labeled
-```
+### Onderdeel 5.2: Pod Security Standards
 
-De bestaande pod bleef gewoon draaien (die voldeed al, zie hierboven). Een bewust onveilige test-pod werd meteen geweigerd:
+Kubernetes kent drie Pod Security Standards: privileged, baseline en restricted. Restricted is het strengste niveau en volgt de best practices voor het hardenen van pods [(The Kubernetes Authors, z.d.-c)](https://kubernetes.io/docs/concepts/security/pod-security-standards/). Ik heb het niveau restricted verplicht gemaakt voor de namespace `default`, met een label op de namespace. De bestaande pod bleef gewoon draaien, omdat die al aan de eisen voldeed. Een bewust onveilige testpod werd direct geweigerd:
 
 ```
-$ kubectl run privtest --image=busybox --restart=Never --privileged --command -- sleep 60
 Error from server (Forbidden): pods "privtest" is forbidden: violates PodSecurity "restricted:latest":
-privileged (container "privtest" must not set securityContext.privileged=true),
-allowPrivilegeEscalation != false, unrestricted capabilities, runAsNonRoot != true,
-seccompProfile (must set securityContext.seccompProfile.type to "RuntimeDefault" or "Localhost")
+privileged (container "privtest" must not set securityContext.privileged=true), ...
 ```
 
-**Family 3.2 (Audit Logging) — nieuw.** K3s logde standaard niets van de API-server. Via [kubernetes/audit-policy.yaml](../kubernetes/audit-policy.yaml) en een `/etc/rancher/k3s/config.yaml` met `kube-apiserver-arg` heb ik audit logging aangezet, met een beleid dat juist op de interessante dingen let: `pods/exec`/`attach` en RBAC-wijzigingen volledig (`RequestResponse`), secrets/configmaps alleen op metadata-niveau (geen waardes in het logbestand zelf), de rest op metadata-niveau. Na `systemctl restart k3s` (cluster bleef Ready, geen downtime van de app):
+### Onderdeel 3.2: audit logging
+
+Audit logging legt vast welke verzoeken er bij de API-server van Kubernetes binnenkomen: wie deed wat, en wanneer [(The Kubernetes Authors, z.d.-a)](https://kubernetes.io/docs/tasks/debug/debug-cluster/audit/). K3s logde dat standaard niet. Met [kubernetes/audit-policy.yaml](../kubernetes/audit-policy.yaml) heb ik audit logging aangezet. Het beleid maakt onderscheid tussen soorten verzoeken:
+
+- **Commando's in een pod en wijzigingen in RBAC** worden volledig gelogd, met het verzoek en het antwoord. Met deze acties kan een aanvaller het verst komen.
+- **Secrets en configmaps** worden alleen op metadataniveau gelogd. Zo komt de inhoud van een secret niet in het logbestand terecht.
+- **De overige verzoeken** worden ook op metadataniveau gelogd.
+
+Na een herstart van K3s bleef het cluster op Ready, en bleef de app bereikbaar. Ik heb gecontroleerd dat een commando in een pod volledig in het log komt, en dat bij het opvragen van een secret alleen de metadata wordt gelogd.
+
+Na de maatregelen heb ik kube-bench opnieuw gedraaid:
 
 ```
-$ kubectl exec deploy/devops-security -- id          # pods/exec -> RequestResponse, incl. responseObject
-$ kubectl get secret regcred                          # secrets -> Metadata, GEEN requestObject/responseObject
-```
-
-Opnieuw gedraaid na de fixes:
-
-```
-== Summary total ==
 59 checks PASS, 5 checks FAIL, 52 checks WARN, 14 checks INFO
 ```
 
-Vijf bevindingen gingen van WARN naar PASS: `1.2.16/17/18/19` (audit-log-path, -maxage, -maxbackup, -maxsize) en `3.2.1` (minimaal auditbeleid aanwezig). `3.2.2` zelf blijft WARN omdat kube-bench die altijd handmatig laat beoordelen, maar de twee commando's hierboven laten zien dat het beleid daadwerkelijk doet wat het moet doen.
+Vijf controles gingen van WARN naar PASS: 1.2.16 tot en met 1.2.19, over het pad, de bewaartermijn en de grootte van het auditlog, en 3.2.1, die controleert of er een auditbeleid is. Controle 3.2.2 blijft op WARN, omdat kube-bench die altijd door een mens laat beoordelen.
 
-**Containerd-maatregel zonder CIS-controle.** De CIS Kubernetes Benchmark zegt niets over de rechten op de containerd-socket zelf (`/run/k3s/containerd/containerd.sock`), terwijl wie dat socket kan aanspreken containers kan starten/stoppen met root-rechten op de node — een bekend escalatiepad dat de NSA/CISA Kubernetes Hardening Guidance wel noemt. Gecontroleerd dat die socket niet wereld-toegankelijk is:
+### Extra: de containerd-socket
 
-```
-$ ls -la /run/k3s/containerd/containerd.sock
-srw-rw---- 1 root root 0 Nov  1 17:07 /run/k3s/containerd/containerd.sock
-```
+De CIS Kubernetes Benchmark zegt niets over de rechten op de socket van containerd, de container runtime van K3s. Wie die socket kan gebruiken, kan containers starten en stoppen op de node, en komt zo om de maatregelen hierboven heen. Ik heb daarom gecontroleerd dat de socket alleen bereikbaar is voor root. Dat stond al goed, waardoor hier niets hoefde te worden aangepast.
 
-Stond al goed (alleen root/root-group), dus hier was niets te fixen, maar wel de moeite van het checken waard: een wereld-schrijfbare containerd-socket zou verslaan wat de RBAC- en PodSecurity-maatregelen hierboven juist proberen te voorkomen.
+## 5.2 Ingress met TLS-terminatie op een andere poort dan 443
 
-**Bronnen**
+Een Ingress regelt hoe verkeer van buiten het cluster bij de juiste service terechtkomt. K3s heeft daarvoor Traefik al ingebouwd als Ingress-controller. Met ServiceLB, de eigen load balancer van K3s, krijgt de service van Traefik een poort op elke node [(K3s Project Authors, z.d.-c)](https://docs.k3s.io/networking/networking-services). In mijn cluster zijn dat NodePort 31985 voor HTTP en 31189 voor HTTPS. Een aparte Ingress-controller was daardoor niet nodig.
 
-- Center for Internet Security. (z.d.). *CIS Kubernetes Benchmark v1.8.0*. [../school docs/Week5/CIS Kubernetes Benchmark v1.8.0 PDF.pdf](../school%20docs/Week5/CIS%20Kubernetes%20Benchmark%20v1.8.0%20PDF.pdf)
-- Aqua Security. (z.d.). *kube-bench*. GitHub. [https://github.com/aquasecurity/kube-bench](https://github.com/aquasecurity/kube-bench)
-- The Kubernetes Authors. (z.d.). *Pod Security Standards*. [https://kubernetes.io/docs/concepts/security/pod-security-standards/](https://kubernetes.io/docs/concepts/security/pod-security-standards/)
-- The Kubernetes Authors. (z.d.). *Auditing*. [https://kubernetes.io/docs/tasks/debug/debug-cluster/audit/](https://kubernetes.io/docs/tasks/debug/debug-cluster/audit/)
-- National Security Agency & Cybersecurity and Infrastructure Security Agency. (2022). *Kubernetes hardening guidance* (v1.2). [https://media.defense.gov/2022/Aug/29/2003066362/-1/-1/0/CTR_KUBERNETES_HARDENING_GUIDANCE_1.2_20220829.PDF](https://media.defense.gov/2022/Aug/29/2003066362/-1/-1/0/CTR_KUBERNETES_HARDENING_GUIDANCE_1.2_20220829.PDF)
-
-## 5.2 Ingress met TLS-terminatie, op een niet-443-poort
-
-K3s heeft Traefik al ingebouwd als Ingress-controller (`kubectl get ingressclass` toont `traefik (default)`). ServiceLB, de eigen load-balancer-simulatie van K3s voor bare-metal clusters, zet de Traefik-service standaard op een `LoadBalancer` met een willekeurige NodePort per poort: 80 op 31985 en 443 op 31189. Een aparte ingress-nginx installeren was dus niet nodig en had alleen extra geheugen gekost op een toch al kleine `t2.medium`.
-
-Ik heb een self-signed certificaat gemaakt en als TLS-secret gezet, en daarna de Ingress toegepast ([kubernetes/ingress.yaml](../kubernetes/ingress.yaml)):
-
-```bash
-openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout tls.key -out tls.crt -subj "/CN=quoterxp.local"
-kubectl create secret tls quoterxp-tls --key tls.key --cert tls.crt
-kubectl apply -f kubernetes/ingress.yaml
-```
-
-Getest op de HTTPS-NodePort (31189, dus niet 443) op CN1 zelf:
+Voor de TLS-verbinding heb ik een self-signed certificaat gemaakt en als secret in het cluster gezet. Daarna heb ik de Ingress uit [kubernetes/ingress.yaml](../kubernetes/ingress.yaml) toegepast. Een test op HTTPS-poort 31189 laat zien dat de verbinding met TLS 1.3 wordt opgezet, met het eigen certificaat:
 
 ```
-$ curl -skv --resolve quoterxp.local:31189:127.0.0.1 https://quoterxp.local:31189/
-* SSL connection using TLSv1.3 / TLS_AES_128_GCM_SHA256 / X25519MLKEM768 / RSASSA-PSS
+* SSL connection using TLSv1.3 / TLS_AES_128_GCM_SHA256
 *   subject: CN=quoterxp.local
-* using HTTP/2
-> GET / HTTP/2
 < HTTP/2 200
 ```
 
-Traefik doet hier de TLS-terminatie (SSL-offloading): de verbinding van buiten is versleuteld tot aan Traefik, en van Traefik naar de pod gaat het gewoon via HTTP op poort 5000 binnen het cluster.
+Traefik doet hier de TLS-terminatie, ook wel SSL-offloading genoemd. De verbinding van buiten is versleuteld tot aan Traefik. Van Traefik naar de pod gaat het verkeer via HTTP op poort 5000, binnen het cluster.
 
-Om dit ook echt van buiten het cluster te testen, moest de security group eerst een regel voor 31189 krijgen. Daarbij viel op dat NodePort 30000 (de app uit week 1) op dat moment vanaf `0.0.0.0/0` en `::/0` open stond, niet alleen vanaf mijn eigen IP zoals ik in week-1/README.md had opgeschreven. Beide dingen in één keer rechtgezet: 30000 verkrapt naar mijn eigen IP, net als bij SSH, en nieuwe regels voor 31189 en 6443 toegevoegd, ook allebei alleen voor mijn eigen IP. De self-reference op 6443 (voor CN1↔CN2 onderling) blijft gewoon staan, de nieuwe regel komt ernaast.
+Om dit ook van buiten het cluster te testen, moest poort 31189 open in de security group. Daarbij zag ik dat NodePort 30000, de app uit week 1, op dat moment openstond voor heel internet, en niet alleen voor mijn eigen IP-adres. Dat heb ik direct rechtgezet: poort 30000 staat nu alleen open voor mijn eigen IP-adres, net als SSH, en de nieuwe regels voor 31189 en 6443 ook. Daarna gaf ook een test vanaf mijn laptop HTTP 200.
 
-<img src="images/security-group-eigen-ip.png" alt="Security group: 30000, 6443 en 31189 allemaal op eigen IP" width="720">
-
-Daarna rechtstreeks vanaf mijn eigen laptop getest (niet meer via SSH):
-
-```
-$ curl -sk -o /dev/null -w 'HTTP %{http_code}\n' --resolve quoterxp.local:31189:13.222.169.74 https://quoterxp.local:31189/
-HTTP 200
-```
+![De security group: 30000, 6443 en 31189 alleen open voor mijn eigen IP-adres](images/security-group-eigen-ip.png)
 
 ## 5.3 Welke CNI gebruikt K3s, en is dat veilig genoeg?
 
-K3s gebruikt standaard Flannel als CNI, met VXLAN als backend (zie ook de dual-stack VXLAN-regel in de security group, [week-1/README.md](../week-1/README.md#11-bootomgeving)). Flannel zelf regelt alleen de overlay (routing tussen pods op verschillende nodes), geen policy-afdwinging. K3s bundelt daarnaast een eigen, op kube-router gebaseerde network-policy-controller die los van Flannel draait en `NetworkPolicy`-objecten wel degelijk afdwingt, tenzij je K3s start met `--disable-network-policy`. Dat is bij mijn cluster niet gezet, dus de NetworkPolicy uit 5.3 hoort hier echt effect te hebben: dat bewijs ik hieronder zodra het cluster weer aanstaat.
+Een CNI-plugin (container network interface) zorgt voor het netwerk tussen de pods. K3s gebruikt standaard Flannel, met VXLAN als techniek om verkeer tussen de nodes te versturen [(K3s Project Authors, z.d.-a)](https://docs.k3s.io/networking/basic-network-options). Flannel regelt alleen dat pods op verschillende nodes elkaar kunnen bereiken. Het dwingt zelf geen regels af over welk verkeer is toegestaan.
 
-CNI vervangen kan, maar niet live: K3s start Flannel bij de eerste `k3s server`-aanroep, dus om een andere CNI te gebruiken moet je het cluster met `--flannel-backend=none` opnieuw opzetten en zelf een CNI installeren (Calico, Canal of Cilium). Canal (Flannel + Calico samen) of Calico alleen geven uitgebreidere policy-opties dan de kube-router-controller van K3s, zoals policies op basis van namespaces met labels in plaats van alleen CIDR's, en egress-filtering naar externe IP's. Cilium gaat nog verder met L7-policies (bijvoorbeeld: deze pod mag alleen een specifiek HTTP-pad benaderen, niet zomaar alle verkeer naar een poort) en eBPF in plaats van iptables, wat beter schaalt bij veel nodes.
+Daarvoor heeft K3s een eigen network-policy-controller ingebouwd, die gebruikmaakt van de bibliotheek van kube-router. Die controller voert NetworkPolicy-objecten wel uit, tenzij K3s wordt gestart met `--disable-network-policy` [(K3s Project Authors, z.d.-c)](https://docs.k3s.io/networking/networking-services). Bij mijn cluster staat die optie niet aan.
 
-Voor een cluster van deze omvang (twee nodes) is de ingebouwde policy-controller van K3s voldoende: die dekt de NetworkPolicy hieronder gewoon. Bij een groter cluster met meerdere teams en namespaces zou ik Cilium adviseren, vooral om de L7-policies en de eBPF-gebaseerde observability (Hubble) die erbij komt.
+Een andere CNI kiezen kan, maar niet terwijl het cluster draait: het cluster moet dan opnieuw worden opgezet met een andere CNI, zoals Calico of Cilium. Cilium gebruikt eBPF, kan regels maken op het niveau van de applicatie, en geeft met Hubble inzicht in het netwerkverkeer [(Cilium Authors, z.d.)](https://docs.cilium.io/en/stable/overview/intro/).
 
-**Bronnen**
-
-- SUSE / Rancher Labs. (z.d.). *K3s networking options*. [https://docs.k3s.io/networking](https://docs.k3s.io/networking)
-- flannel-io. (z.d.). *Flannel* [broncode]. GitHub. [https://github.com/flannel-io/flannel](https://github.com/flannel-io/flannel)
-- Isovalent / Cilium. (z.d.). *CNI chaining with Flannel*. [https://docs.cilium.io/en/stable/installation/cni-chaining-flannel/](https://docs.cilium.io/en/stable/installation/cni-chaining-flannel/)
+Voor een cluster van deze omvang, met twee nodes, is de ingebouwde controller van K3s voldoende. Bij een groter cluster met meerdere teams en namespaces adviseer ik Cilium, vooral vanwege de regels op applicatieniveau en het inzicht in het verkeer.
 
 ### NetworkPolicy: alleen poort 5000
 
-[kubernetes/networkpolicy.yaml](../kubernetes/networkpolicy.yaml) selecteert de `quoterxp`-pods en staat alleen inkomend verkeer op poort 5000 toe. Zodra een pod door een NetworkPolicy geselecteerd wordt, geldt voor die pod: wat niet expliciet toegestaan is, wordt geblokkeerd.
+Een NetworkPolicy bepaalt welk verkeer een pod mag ontvangen of versturen. Zodra een pod door een NetworkPolicy wordt geselecteerd, wordt al het verkeer geblokkeerd dat niet expliciet is toegestaan [(The Kubernetes Authors, z.d.-b)](https://kubernetes.io/docs/concepts/services-networking/network-policies/). De policy in [kubernetes/networkpolicy.yaml](../kubernetes/networkpolicy.yaml) selecteert de pods van Quoter XP en staat alleen inkomend verkeer op poort 5000 toe. Met een tijdelijke testpod heb ik gecontroleerd dat poort 5000 bereikbaar is en een andere poort niet:
 
 ```
-$ kubectl apply -f kubernetes/networkpolicy.yaml
-networkpolicy.networking.k8s.io/quoterxp-allow-5000-only created
-
-$ kubectl run nptest --rm -i --restart=Never --image=busybox --command -- sh -c 'nc -zv -w3 devops-security 5000'
 devops-security (10.43.166.211:5000) open
-
-$ kubectl run nptest --rm -i --restart=Never --image=busybox --command -- sh -c 'nc -zv -w3 devops-security 9999'
 nc: devops-security (10.43.166.211:9999): Connection timed out
 ```
 
-Dit bevestigt ook meteen het antwoord hierboven: de ingebouwde policy-controller van K3s dwingt de NetworkPolicy echt af, ook al is Flannel zelf alleen een overlay-netwerk.
+Daarmee is ook de vraag uit deze paragraaf beantwoord: de ingebouwde controller van K3s dwingt de NetworkPolicy echt af, ook al is Flannel zelf alleen een overlaynetwerk.
 
 ## 5.4 Toegang zonder adminwachtwoord
 
-SolidApps zou de omgeving met Terraform/Ansible uitrollen in plaats van losse scripts zoals in deze PoC. Zo zou ik de toegang daarbij regelen, zonder gedeeld adminwachtwoord.
+SolidApps zou een omgeving als deze uitrollen met Terraform en Ansible, in plaats van met losse scripts zoals in deze proefopstelling. In deze paragraaf beschrijf ik hoe de toegang daarbij kan worden geregeld zonder gedeeld adminwachtwoord.
 
-Voor SSH gewoon een los sleutelpaar per engineer, geen gedeelde `admin`-login. Op AWS is EC2 Instance Connect of SSM Session Manager eigenlijk nog beter: dan hoeft er helemaal geen SSH-poort open te staan en geen sleutel rondgestuurd te worden, AWS regelt de toegang dan via IAM.
+- **SSH naar de servers:** elke engineer krijgt een eigen sleutelpaar in plaats van een gedeelde login. Op AWS is Session Manager van Systems Manager nog beter: er hoeft dan geen SSH-poort open te staan, en IAM regelt de toegang [(Amazon Web Services, z.d.)](https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager.html).
+- **De state van Terraform:** die staat in een S3-bucket, met een bucket policy die alleen de juiste IAM-rol toegang geeft [(HashiCorp, z.d.)](https://developer.hashicorp.com/terraform/language/backend/s3). Dat is belangrijk, omdat de state gevoelige gegevens kan bevatten.
+- **De pipeline:** de pipeline die `terraform apply` draait, logt bij AWS in met een IAM-rol via OIDC. Hij krijgt dan per run een tijdelijk token, in plaats van een vaste access key in een secret [(GitHub, z.d.)](https://docs.github.com/en/actions/how-tos/secure-your-work/security-harden-deployments/oidc-in-aws).
+- **Ansible:** de inventory en playbooks gebruiken sleutels in plaats van wachtwoorden. Gevoelige gegevens in playbooks, zoals API-sleutels, worden versleuteld met Ansible Vault [(Ansible Community, z.d.)](https://docs.ansible.com/ansible/latest/vault_guide/index.html).
+- **De nodes zelf:** elke engineer heeft een eigen account met een eigen sleutel, en het gebruik van `sudo` wordt per gebruiker gelogd met `auditd`.
 
-Voor Terraform remote state in een S3-bucket, met een bucket policy die alleen de juiste IAM-rol lees/schrijftoegang geeft, want die state kan secrets bevatten zoals wachtwoorden in `terraform.tfvars`. De pipeline die `terraform apply` draait authenticeert dan met een IAM-rol via OIDC vanuit GitHub Actions, dus met een kortlevend token in plaats van een permanente access key in een secret.
+Dit is hetzelfde principe als in mijn adviezen in week 2 en 4: één eigen identiteit per persoon of systeem, in plaats van een gedeeld geheim dat bij een lek overal moet worden vervangen.
 
-Ansible-inventory en playbooks gebruiken sleutels, geen wachtwoorden, en secrets in playbooks (zoals API-sleutels) staan versleuteld met `ansible-vault`, nooit in platte tekst in de repository.
+### TryHackMe: Cluster Hardening
 
-En op de nodes zelf: elke engineer een eigen account met een eigen sleutel, sudo-rechten gelogd per gebruiker met `auditd`, in plaats van iedereen via hetzelfde `root`- of `admin`-wachtwoord.
+Als onderdeel van deze opdracht heb ik de room "Cluster Hardening" op TryHackMe volledig doorlopen, inclusief de praktische opdracht [(TryHackMe, z.d.)](https://tryhackme.com/room/clusterhardening).
 
-Dit is hetzelfde idee als mijn advies in 2.3 en 4.3: een centrale identiteit (IAM-rol, Entra ID of een eigen sleutel) in plaats van een gedeeld geheim dat overal hetzelfde blijft en bij een lek overal opnieuw moet.
+![De room Cluster Hardening op TryHackMe: 100% voltooid](images/tryhackme-cluster-hardening-voltooid.png)
 
-TryHackMe "Cluster Hardening" (task 8 overgeslagen) en de drie belangrijkste hardeningspunten voor SolidApps: nog te doen.
+De drie belangrijkste lessen uit de room, vertaald naar SolidApps:
+
+1. **TLS op al het verkeer tussen de onderdelen van de control plane.** De API-server communiceert met bijna alles in het cluster, zoals de kubelet en etcd. Is dat verkeer niet versleuteld, dan kan iemand die al in het netwerk zit meekijken, of zich voordoen als een van die onderdelen.
+2. **RBAC met least privilege.** Een service account krijgt alleen de rechten die het echt nodig heeft. Een overgenomen pod met te veel rechten kan anders het hele cluster overnemen. In week 7 pas ik dit toe.
+3. **Admission controllers.** Een admission controller werkt als een portier bij de ingang van het cluster. Voordat een pod mag starten, controleert hij of de pod aan de regels voldoet. Voldoet de pod niet, dan start hij niet. Dat was in 5.1 te zien: de onveilige testpod werd door Pod Security Admission geweigerd.
+
+## Bronnen
+
+Amazon Web Services. (z.d.). *AWS Systems Manager Session Manager*. AWS Systems Manager User Guide. https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager.html
+
+Ansible Community. (z.d.). *Protecting sensitive data with Ansible vault*. Ansible Community Documentation. https://docs.ansible.com/ansible/latest/vault_guide/index.html
+
+Aqua Security. (z.d.). *kube-bench* \[Broncode\]. GitHub. https://github.com/aquasecurity/kube-bench
+
+Center for Internet Security. (z.d.). *CIS Kubernetes Benchmarks*. https://www.cisecurity.org/benchmark/kubernetes
+
+Cilium Authors. (z.d.). *Introduction to Cilium & Hubble*. Cilium documentation. https://docs.cilium.io/en/stable/overview/intro/
+
+GitHub. (z.d.). *Configuring OpenID Connect in Amazon Web Services*. GitHub Docs. https://docs.github.com/en/actions/how-tos/secure-your-work/security-harden-deployments/oidc-in-aws
+
+HashiCorp. (z.d.). *Backend type: s3*. Terraform documentation. https://developer.hashicorp.com/terraform/language/backend/s3
+
+K3s Project Authors. (z.d.-a). *Basic network options*. K3s. https://docs.k3s.io/networking/basic-network-options
+
+K3s Project Authors. (z.d.-b). *CIS 1.8 self assessment guide*. K3s. https://docs.k3s.io/security/self-assessment-1.8
+
+K3s Project Authors. (z.d.-c). *Networking services*. K3s. https://docs.k3s.io/networking/networking-services
+
+National Security Agency & Cybersecurity and Infrastructure Security Agency. (2022). *Kubernetes hardening guide* (Versie 1.2). https://media.defense.gov/2022/Aug/29/2003066362/-1/-1/0/CTR_KUBERNETES_HARDENING_GUIDANCE_1.2_20220829.PDF
+
+The Kubernetes Authors. (z.d.-a). *Auditing*. Kubernetes. https://kubernetes.io/docs/tasks/debug/debug-cluster/audit/
+
+The Kubernetes Authors. (z.d.-b). *Network policies*. Kubernetes. https://kubernetes.io/docs/concepts/services-networking/network-policies/
+
+The Kubernetes Authors. (z.d.-c). *Pod Security Standards*. Kubernetes. https://kubernetes.io/docs/concepts/security/pod-security-standards/
+
+TryHackMe. (z.d.). *Cluster hardening*. https://tryhackme.com/room/clusterhardening

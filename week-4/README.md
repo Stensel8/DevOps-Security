@@ -1,89 +1,142 @@
-# Week 4
+# Week 4: Registry-beveiliging
+
+In deze week staat de registry centraal: de plek waar container-images worden opgeslagen en vanwaar het cluster ze ophaalt. Een registry is een aantrekkelijk doelwit. Wie een image in de registry kan aanpassen, kan eigen code laten draaien op elk cluster dat dat image gebruikt. En wie een image kan downloaden, kan alles lezen wat erin staat, ook gegevens die er per ongeluk in terecht zijn gekomen.
+
+Bij de beveiliging van een registry gaat het daarom vooral om twee vragen: wie mag images pushen en pullen, en hoe bewijst iemand of iets wie hij is. In plaats van een wachtwoord kan dat met een access token met beperkte rechten [(Docker, z.d.-a)](https://docs.docker.com/security/access-tokens/), of met een identiteit die het cloudplatform zelf beheert.
+
+Deze week bestaat uit vier opdrachten. Paragraaf 4.1 beschrijft de installatie van een eigen registry met Harbor. Paragraaf 4.2 licht toe waarom de pipeline inlogt met een access token, en paragraaf 4.3 vergelijkt de registries van AWS, Azure en Docker Hub. Paragraaf 4.4 bespreekt het lek van secrets op Docker Hub uit december 2025. Als extra staat het image sinds deze week ook in GitHub Container Registry.
 
 ## 4.1 Eigen Harbor-registry
 
-Een losse EC2-instance (`t2.large`, Ubuntu 26.04, zelfde sleutelpaar als CN1/CN2) naast het K3s-cluster, want Harbor's eigen docker-compose-stack (registry, portal, core, redis, postgres) wil niet concurreren met K3s op een al kleine `t2.medium`.
+Voor deze opdracht heb ik Harbor geïnstalleerd. Harbor is een open-source registry die je zelf kunt hosten, met projecten, gebruikersrechten en ondersteuning voor verschillende manieren van inloggen [(Harbor, z.d.-c)](https://goharbor.io/docs/2.13.0/administration/configure-authentication/). Zo blijven interne images binnen de eigen omgeving.
 
-<img src="images/ec2-launch-harbor.png" alt="Launch instance: Ubuntu 26.04, t2.large, 80 GiB" width="720">
+Harbor draait op een aparte server naast het cluster, met Ubuntu 26.04 en type `t2.large`. Harbor bestaat zelf uit meerdere containers, zoals de registry, de webinterface, een database en een cache. Op de kleine `t2.medium`-servers van het cluster zou dat met K3s om dezelfde geheugenruimte concurreren.
 
-<img src="images/ec2-keypair-selectie.png" alt="Zelfde sleutelpaar hergebruikt voor de Harbor-instance" width="400">
+![Het aanmaken van de server voor Harbor: Ubuntu 26.04, t2.large, 80 GiB](images/ec2-launch-harbor.png)
 
-Geïnstalleerd via een EC2 user-data-script ([kubernetes/harbor/harbor-userdata.sh](../kubernetes/harbor/harbor-userdata.sh)) dat zichzelf bij de eerste boot installeert: Docker, een self-signed TLS-certificaat op de eigen publieke hostname (opgezocht via de instance-metadata, IMDSv2), en de Harbor offline-installer. Het admin-wachtwoord genereert het script zelf en zet het lokaal in `/root/harbor-admin-password.txt` weg, nooit in de user-data zelf (die is in platte tekst leesbaar via de AWS-console/CLI).
+De installatie gaat volledig automatisch, met het script [kubernetes/harbor/harbor-userdata.sh](../kubernetes/harbor/harbor-userdata.sh). Dat script draait bij de eerste start van de server en voert de volgende stappen uit:
 
-Eerste versie van het script bleef hangen: het riep `cloud-init status --wait` aan om op het netwerk te wachten, maar draait zelf al als onderdeel van cloud-init's laatste module, dus wachtte op zichzelf. Gefixt door die regel te laten vervallen (user-data draait toch al pas na de netwerk-stap van cloud-init).
+- **Docker installeren:** Harbor draait zelf in containers.
+- **Een TLS-certificaat maken:** het script zoekt de publieke hostnaam van de server op en maakt daarvoor een self-signed certificaat, zodat Harbor alleen via HTTPS bereikbaar is [(Harbor, z.d.-a)](https://goharbor.io/docs/2.13.0/install-config/configure-https/).
+- **Harbor installeren:** met de offline-installer van Harbor.
+- **Een beheerderswachtwoord maken:** het script maakt zelf een willekeurig wachtwoord aan en bewaart het op de server in `/root/harbor-admin-password.txt`, alleen leesbaar voor root. Het wachtwoord staat dus niet in het script zelf, want user data is via de AWS-console en de CLI in platte tekst te lezen.
 
-Na de install: ingelogd op `https://ec2-54-84-222-42.compute-1.amazonaws.com` met het gegenereerde wachtwoord.
+De eerste versie van het script bleef hangen. Het wachtte met `cloud-init status --wait` tot de server klaar was met opstarten, maar het script is zelf een onderdeel van die opstartfase, en wachtte dus op zichzelf. Zonder die regel werkt het wel, omdat user data pas draait als het netwerk al klaar is.
 
-<img src="images/harbor-projects-ingelogd.png" alt="Ingelogd in Harbor, project library aangemaakt" width="720">
+Na de installatie heb ik ingelogd met het gegenereerde wachtwoord.
 
-## Extra: het image ook naar GitHub Container Registry
+![Ingelogd in Harbor, met het project library](images/harbor-projects-ingelogd.png)
 
-Naast Docker Hub pusht de `Build`-job nu ook naar GHCR (`ghcr.io/stensel8/devops-security`), met dezelfde `latest`- en commit-SHA-tags. Dat staat los van 4.1-4.4, maar sluit er wel op aan: het laat zien hoe makkelijk het is om een image op twee registries tegelijk te zetten, precies het soort afweging dat in 4.3 aan bod komt.
+Om te controleren dat pushen en pullen werkt, heb ik het image van Docker Hub opgehaald, naar Harbor gepusht, lokaal verwijderd en weer uit Harbor gehaald. Docker vertrouwt het self-signed certificaat van Harbor via `/etc/docker/certs.d/<host>/ca.crt`. Dat heb ik op de Harbor-server zelf ingesteld, omdat dat op mijn eigen laptop vastliep op een probleem met de rechten.
 
-GHCR gebruikt hier geen los PAT zoals Docker Hub (4.2), maar de ingebouwde `GITHUB_TOKEN` van de workflow-run zelf, met `packages: write` alleen voor de `Build`-job:
+```
+$ docker push ec2-54-84-222-42.compute-1.amazonaws.com/library/devops-security:latest
+latest: digest: sha256:66b0a6b1382f... size: 857
+$ docker pull ec2-54-84-222-42.compute-1.amazonaws.com/library/devops-security:latest
+Status: Downloaded newer image for ec2-54-84-222-42.compute-1.amazonaws.com/library/devops-security:latest
+```
+
+![Het gepushte image devops-security in Harbor](images/harbor-repository-gepusht.png)
+
+Bij het image zelf staan "Scan Vulnerability" en "Generate SBOM" uit. Dat is een bewuste keuze. Harbor kan Trivy als scanner gebruiken, maar dat werk doen Docker Scout en Trivy al in de pipeline (week 3). Harbor is hier alleen een eigen registry, geen tweede scanner.
+
+![Bij het image staan scannen en SBOM uit, omdat er geen scanner aan Harbor is gekoppeld](images/harbor-artifact-detail.png)
+
+Harbor kent meerdere manieren van inloggen: lokale accounts in de eigen database, LDAP of Active Directory, en OIDC [(Harbor, z.d.-c)](https://goharbor.io/docs/2.13.0/administration/configure-authentication/). Daarnaast zijn er robot accounts. Dat zijn accounts voor machines in plaats van mensen, met een eigen, beperkte set rechten en een eigen geldigheidsduur [(Harbor, z.d.-d)](https://goharbor.io/docs/2.13.0/administration/robot-accounts/). Voor deze proefopstelling gebruik ik het lokale account `admin`. Voor een pipeline zou ik een robot account maken dat alleen naar dit ene project mag pushen, in plaats van de beheerderslogin als secret op te slaan.
+
+## 4.2 Docker Hub-login met een access token
+
+Deze opdracht vraagt om in de pipeline in te loggen met een Personal Access Token (PAT) in plaats van met een wachtwoord. Dat was al zo vanaf week 1. Er zijn zelfs twee tokens, elk met een eigen doel (zie [week 1](../week-1/README.md)):
+
+- **`DOCKER_HUB_PAT`:** mag lezen en schrijven, en wordt gebruikt door de stappen in de pipeline die images pushen.
+- **`DOCKER_HUB_PULL_PAT`:** mag alleen lezen, en wordt gebruikt voor het pull secret `regcred` op het cluster.
+
+Een access token heeft twee voordelen ten opzichte van een wachtwoord. Ten eerste geeft een wachtwoord toegang tot het hele account, terwijl een token beperkte rechten kan hebben. Ten tweede kan een token los worden ingetrokken. Komt een token ergens in een log terecht, dan trek ik alleen dat token in, en hoef ik niet overal opnieuw in te loggen [(Docker, z.d.-a)](https://docs.docker.com/security/access-tokens/). Dat het pull-token alleen leesrechten heeft, is least privilege: als het ooit van CN1 wordt gestolen, kan niemand daarmee naar mijn repository pushen.
+
+De secret voor de gebruikersnaam heette eerst `DOCKERHUB_LOGIN`, zonder underscore, terwijl de tokens `DOCKER_HUB_PAT` en `DOCKER_HUB_PULL_PAT` heten. Voor de duidelijkheid heet hij nu ook `DOCKER_HUB_LOGIN`.
+
+![De secrets in GitHub: DOCKER_HUB_LOGIN, DOCKER_HUB_PAT en DOCKER_HUB_PULL_PAT](images/dockerhub-secrets-consistent.png)
+
+## 4.3 Registry-vergelijking: ECR, ACR en Docker Hub
+
+In deze paragraaf vergelijk ik drie registries: Docker Hub, Amazon Elastic Container Registry (ECR) en Azure Container Registry (ACR). ECR en ACR zijn de beheerde registries van AWS en Azure [(Amazon Web Services, z.d.-b)](https://docs.aws.amazon.com/AmazonECR/latest/userguide/what-is-ecr.html) [(Microsoft, 2026b)](https://learn.microsoft.com/en-us/azure/container-registry/container-registry-intro).
+
+| | Docker Hub | AWS ECR | Azure ACR |
+| --- | --- | --- | --- |
+| Security | Inloggen met access tokens, zonder koppeling met de identiteiten van een cloudplatform | Inloggen met IAM-rollen, ook vanuit een pipeline zonder vaste sleutels. Images scannen via Amazon Inspector [(Amazon Web Services, z.d.-a)](https://docs.aws.amazon.com/AmazonECR/latest/userguide/image-scanning.html). | Inloggen met Entra ID en managed identities, ook zonder vaste sleutels. Images scannen via Microsoft Defender for Cloud [(Microsoft, 2026b)](https://learn.microsoft.com/en-us/azure/container-registry/container-registry-intro). |
+| Kosten | Gratis voor publieke images, met een limiet op het aantal pulls per 6 uur [(Docker, z.d.-b)](https://docs.docker.com/docker-hub/usage/pulls/) | Betalen naar gebruik, voor opslag en dataverkeer | Drie niveaus: Basic, Standard en Premium, met meer opslag en functies zoals geo-replicatie bij Premium [(Microsoft, 2026a)](https://learn.microsoft.com/en-us/azure/container-registry/container-registry-skus) |
+| Snelheid | Bij veel builds kan de pull-limiet een pipeline vertragen of laten mislukken | Snel binnen dezelfde AWS-regio als het cluster | Snel binnen dezelfde Azure-regio als het cluster |
+
+SolidApps draait voor klanten op zowel Azure als AWS. Mijn advies is om Docker Hub alleen te gebruiken voor publieke images zonder gevoelige inhoud, zoals in deze proefopstelling, en voor de rest ECR of ACR te kiezen, afhankelijk van de cloud waar de applicatie draait. Het belangrijkste verschil met Docker Hub is dat beide clouds pushen en pullen laten controleren met identiteiten die de cloud zelf al beheert. Er hoeft dan geen los token in een secret te staan.
+
+Harbor uit 4.1 heeft geen eigen identiteitsbeheer van een cloud, maar ondersteunt wel OIDC. Met Entra ID als OIDC-provider loggen gebruikers in met hun Entra ID-account, en kunnen groepen uit Entra ID worden gekoppeld aan rollen in Harbor [(Harbor, z.d.-b)](https://goharbor.io/docs/2.13.0/administration/configure-authentication/oidc-auth/). Dat sluit aan bij het principe van één centrale identiteit, zonder losse wachtwoorden per systeem.
+
+## 4.4 Het lek van secrets op Docker Hub in december 2025
+
+In december 2025 publiceerde het Canadese securitybedrijf Flare een onderzoek naar publieke images op Docker Hub. In de images die in november 2025 waren geüpload, vond Flare 10.456 containers waarin een of meer secrets zaten, zoals sleutels voor cloudomgevingen en tokens. Die kwamen van meer dan 100 bedrijven, waaronder een Fortune 500-bedrijf, via een persoonlijk publiek account van een medewerker, en een grote bank [(Page, 2025)](https://www.theregister.com/2025/12/11/docker_hub_secrets_leak/).
+
+Dit was geen hack van Docker zelf. De gebruikers hadden de secrets zelf in hun images gezet. Opvallend is wat er daarna gebeurde: in ongeveer 75 procent van de gevallen waarin een secret uit een image werd verwijderd, bleef de sleutel zelf geldig. Het secret was dan wel uit het image, maar wie het eerder had gekopieerd, kon het nog gewoon gebruiken.
+
+In deze proefopstelling staan geen secrets in het image:
+
+- **De sleutel van de sessies** wordt bij het opstarten willekeurig aangemaakt, met `secrets.token_hex(32)` in `app.py`, en staat nergens in een bestand.
+- **Configuratiebestanden met echte waarden**, zoals een `.env`-bestand, worden niet met `COPY` in het image gezet.
+- **De gegevens voor Docker Hub en Kubernetes** komen binnen via secrets in GitHub, en staan nooit als bestand in de repository of in het image.
+
+Daarnaast scant [trivy.yml](../.github/workflows/trivy.yml) de repository op secrets, met `scanners: vuln,misconfig,secret`. Dat controleert de broncode, maar niet de lagen van het gebouwde image.
+
+Mijn advies voor SolidApps:
+
+1. **Zet nooit secrets in een Dockerfile**, niet met `COPY` en niet met `ENV`, ook niet in een tussenstap van een multi-stage build. Elke laag blijft bewaard, ook als het bestand er later met `RUN rm` uit wordt gehaald.
+2. **Geef secrets pas mee als de container draait**, via Kubernetes Secrets, variabelen vanuit de pipeline of een secrets manager zoals AWS Secrets Manager of Azure Key Vault.
+3. **Scan ook het gebouwde image op secrets**, vóór de push. Zo komt een configuratiebestand dat per ongeluk is meegekopieerd niet in de registry.
+4. **Leg vast wat er gebeurt als het toch misgaat.** Haal het secret niet alleen uit het image of de repository, maar trek de sleutel zelf altijd in en vervang hem. Daar ging het in het onderzoek van Flare in driekwart van de gevallen mis.
+5. **Zet geen gevoelige images op een persoonlijk, publiek account.** Gebruik een account van de organisatie met private repositories, of een eigen registry zoals Harbor uit 4.1.
+
+## Extra: het image ook in GitHub Container Registry
+
+Naast Docker Hub zet de job `Build` het image nu ook in GitHub Container Registry (GHCR), met dezelfde tags [(GitHub, z.d.-b)](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry). Dat laat zien hoe eenvoudig het is om een image op twee registries tegelijk te zetten.
+
+Voor GHCR is geen apart token nodig. De pipeline gebruikt het `GITHUB_TOKEN` dat GitHub voor elke run zelf aanmaakt, en dat vervalt als de job klaar is [(GitHub, z.d.-a)](https://docs.github.com/en/actions/security-for-github-actions/security-guides/automatic-token-authentication). Alleen de job `Build` krijgt het recht `packages: write`; de rest van de pipeline mag alleen lezen:
 
 ```yaml
 permissions:
   contents: read
-  packages: write   # alleen voor deze job, de rest van de pipeline blijft contents: read
-
-steps:
-  - name: Login to GitHub Container Registry
-    uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4
-    with:
-      registry: ghcr.io
-      username: ${{ github.actor }}
-      password: ${{ secrets.GITHUB_TOKEN }}
+  packages: write
 ```
 
-Dat token is automatisch per workflow-run aangemaakt en verloopt vanzelf zodra de job klaar is: nog korter levend dan de PAT's uit 4.2, en er hoeft niets handmatig aangemaakt of in GitHub secrets gezet te worden.
+Bij het inloggen op GHCR gebruikt de stap `docker/login-action` dit token als wachtwoord, via `secrets.GITHUB_TOKEN`.
 
-Het image staat zo op twee plekken, met dezelfde inhoud. Docker Hub:
+Dat token leeft nog korter dan de access tokens uit 4.2, en er hoeft niets met de hand te worden aangemaakt. Het image staat nu op beide plekken, met dezelfde inhoud:
 
-<img src="images/dockerhub-tags.png" alt="Docker Hub: latest en de commit-SHA-tag, allebei 0 kwetsbaarheden" width="720">
+![Docker Hub: de tag latest en de tag met de commit-hash, allebei zonder kwetsbaarheden](images/dockerhub-tags.png)
 
-En GHCR, inclusief dezelfde README die Docker Hub ook toont:
+![GHCR: hetzelfde image met dezelfde tags](images/ghcr-package.png)
 
-<img src="images/ghcr-package.png" alt="GHCR: hetzelfde image, dezelfde tags" width="720">
+## Bronnen
 
-## 4.2 Docker Hub-login met een PAT
+Amazon Web Services. (z.d.-a). *Scan images for software vulnerabilities in Amazon ECR*. Amazon ECR User Guide. https://docs.aws.amazon.com/AmazonECR/latest/userguide/image-scanning.html
 
-Dit stond al vanaf week 1 goed: de pipeline logt in met een Personal Access Token, nooit met het wachtwoord van mijn Docker Hub-account. Er zijn zelfs twee tokens met een verschillend doel, zie [week-1/README.md](../week-1/README.md#11-bootomgeving): `DOCKER_HUB_PAT` (lezen en schrijven, voor de `Login to Docker Hub`-stappen die pushen) en `DOCKER_HUB_PULL_PAT` (alleen lezen, voor het `regcred`-pull-secret dat de Deploy-job op het cluster zet).
+Amazon Web Services. (z.d.-b). *What is Amazon Elastic Container Registry?* Amazon ECR User Guide. https://docs.aws.amazon.com/AmazonECR/latest/userguide/what-is-ecr.html
 
-Een wachtwoord geeft volledige toegang tot het account en moet overal hetzelfde blijven. Een PAT is beperkt tot API/registry-toegang, kan los van het wachtwoord ingetrokken worden zonder dat ik opnieuw moet inloggen op elke plek waar het wachtwoord stond, en kan je per token zien wanneer hij voor het laatst gebruikt is. Komt een token toch ergens in een log terecht, dan intrek ik alleen dat token. Met een wachtwoord zou ik overal opnieuw moeten inloggen, inclusief 2FA. Dat de pull-token alleen leesrechten heeft is least privilege: komt die ooit uit op CN1, dan kan daarmee niemand naar mijn repository pushen.
+Docker. (z.d.-a). *Access tokens*. Docker Docs. https://docs.docker.com/security/access-tokens/
 
-De secret-naam voor de gebruikersnaam heette eerst `DOCKERHUB_LOGIN` (geen underscore tussen Docker en Hub), terwijl de twee tokens wel `DOCKER_HUB_PAT` en `DOCKER_HUB_PULL_PAT` heten. Hernoemd naar `DOCKER_HUB_LOGIN` voor consistentie (GitHub kan een secret niet hernoemen, dus nieuwe aangemaakt met dezelfde waarde en de oude verwijderd), en `build.yaml` op de vier plekken aangepast waar die secret gebruikt wordt.
+Docker. (z.d.-b). *Docker Hub pull usage and limits*. Docker Docs. https://docs.docker.com/docker-hub/usage/pulls/
 
-<img src="images/dockerhub-secrets-consistent.png" alt="GitHub secrets: DOCKER_HUB_LOGIN, DOCKER_HUB_PAT, DOCKER_HUB_PULL_PAT" width="720">
+GitHub. (z.d.-a). *Use GITHUB_TOKEN for authentication in workflows*. GitHub Docs. https://docs.github.com/en/actions/security-for-github-actions/security-guides/automatic-token-authentication
 
-## 4.3 Registry-vergelijking: ECR, ACR en Docker Hub
+GitHub. (z.d.-b). *Working with the Container registry*. GitHub Docs. https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry
 
-| | Docker Hub | AWS ECR | Azure ACR |
-| --- | --- | --- | --- |
-| Security | PAT's, geen IAM-koppeling. Secret scanning alleen via losse tools | IAM-rollen, OIDC vanuit de pipeline mogelijk (geen statische sleutels), scanning via Inspector | Entra ID/RBAC, managed identities vanuit AKS (ook geen statische sleutels), scanning via Defender for Cloud |
-| Kosten | Gratis voor publieke images, rate limits op het gratis plan (pull-limiet per 6 uur) | Betaal naar gebruik (opslag + dataverkeer), geen aparte abonnementskosten | Zelfde model als ECR, drie tiers (Basic/Standard/Premium) voor meer opslag/geo-replicatie |
-| Performance | Rate limits kunnen een pipeline vertragen of laten falen bij veel builds | Laag, binnen dezelfde AWS-regio als het cluster | Laag, binnen dezelfde Azure-regio als het cluster |
+Harbor. (z.d.-a). *Configure HTTPS access to Harbor*. Harbor docs. https://goharbor.io/docs/2.13.0/install-config/configure-https/
 
-Voor SolidApps, die voor klanten op Azure en AWS draait, zou ik Docker Hub alleen gebruiken voor publieke, niet-gevoelige images (zoals in deze PoC) en voor de rest ECR of ACR kiezen, afhankelijk van de cloud waar de workload draait. Het belangrijkste verschil met Docker Hub is dat beide clouds pushen/pullen laten verifiëren met identiteiten die de cloud zelf al beheert (IAM-rol of managed identity), in plaats van een los PAT dat ergens in een GitHub secret moet staan.
+Harbor. (z.d.-b). *Configure OIDC provider authentication*. Harbor docs. https://goharbor.io/docs/2.13.0/administration/configure-authentication/oidc-auth/
 
-Harbor (4.1) heeft geen eigen cloud-identiteitsprovider, maar ondersteunt wel OIDC. Met Entra ID als OIDC-provider ingesteld, loggen gebruikers en pipelines in met hun Entra ID-identiteit in plaats van een los Harbor-account, en worden Entra ID-groepen gekoppeld aan Harbor-projectrollen (guest/developer/maintainer). Dat is dezelfde federatie-gedachte als mijn advies in week 2 (2.3) voor de AWS-console: één centrale identiteit, geen losse wachtwoorden per systeem.
+Harbor. (z.d.-c). *Configuring authentication*. Harbor docs. https://goharbor.io/docs/2.13.0/administration/configure-authentication/
 
-## 4.4 De Docker Hub secrets-lek van december 2025
+Harbor. (z.d.-d). *Create system robot accounts*. Harbor docs. https://goharbor.io/docs/2.13.0/administration/robot-accounts/
 
-Flare publiceerde op 10 december 2025 onderzoek naar 10.456 publieke Docker Hub-images (geüpload in november 2025) met minstens één geëxporteerd secret erin. Dit was geen hack van Docker zelf: gebruikers hadden zelf levende cloud-sleutels, GitHub-tokens en CI/CD-credentials in hun images gebakken, onder andere via manifests. Het ging om meer dan 100 bedrijven, waaronder een Fortune 500-bedrijf en een grote bank, via een persoonlijk publiek account. Van de getroffen developers haalde ongeveer een kwart het secret binnen 48 uur uit de image, maar ongeveer driekwart draaide de onderliggende sleutel zelf niet om: het secret was weg uit de image, maar bleef bruikbaar.
+Microsoft. (2026a, 15 oktober). *Azure Container Registry SKU features and limits*. Microsoft Learn. https://learn.microsoft.com/en-us/azure/container-registry/container-registry-skus
 
-Onze eigen PoC bakt geen secrets in het image. De `app.secret_key` wordt bij het opstarten willekeurig gegenereerd (`secrets.token_hex(32)` in `app.py`), niet in een bestand gezet. Er wordt niets met `COPY` uit een `.env`- of configbestand met echte waardes in het image gezet, en de Docker Hub- en Kubernetes-credentials komen via GitHub secrets binnen, nooit als bestand in de repository of het image (zie de comments "NOOIT hardcoded!" in [build.yaml](../.github/workflows/build.yaml)). [trivy.yml](../.github/workflows/trivy.yml) scant de repository op commits met secrets erin (`scanners: vuln,misconfig,secret`), maar dat scant de broncode, niet de lagen van het gebouwde image zelf.
+Microsoft. (2026b, 11 februari). *Introduction to Azure Container Registry*. Microsoft Learn. https://learn.microsoft.com/en-us/azure/container-registry/container-registry-intro
 
-Advies voor SolidApps:
-
-1. Nooit secrets met `COPY` of `ENV` in een Dockerfile zetten, ook niet in een tussenstap van een multi-stage build: elke laag blijft bewaard, ook na een latere `RUN rm`.
-2. Secrets altijd runtime injecteren: Kubernetes Secrets, environment variables vanuit de CI-runner, of een secrets manager (bijvoorbeeld AWS Secrets Manager of Azure Key Vault).
-3. Naast het scannen van de broncode (zoals Trivy nu doet) ook het gebouwde image zelf op secrets scannen vóór de push, zodat een per ongeluk meegekopieerd configbestand er niet doorheen glipt.
-4. Een vaste procedure voor als het toch misgaat: niet alleen het secret uit de image/repository halen, maar de onderliggende sleutel altijd ook daadwerkelijk intrekken en vervangen. Dat is precies waar driekwart van de getroffen developers in het Flare-onderzoek het liet zitten.
-5. Geen gevoelige images op een persoonlijk, publiek Docker Hub-account. Voor SolidApps: een eigen organisatie-account met private repositories, of zoals bij 4.1 een eigen Harbor-registry voor interne images.
-
-**Bronnen**
-
-- Flare Systems, Inc. (2025). *Thousands of exposed secrets found on Docker Hub, putting organizations at risk*. [https://flare.io/learn/resources/docker-hub-secrets-exposed](https://flare.io/learn/resources/docker-hub-secrets-exposed)
-- The Register. (2025, 11 december). *10K Docker images spray live cloud creds across the internet*. [https://www.theregister.com/2025/12/11/docker_hub_secrets_leak/](https://www.theregister.com/2025/12/11/docker_hub_secrets_leak/)
-- BleepingComputer. (2025). *Over 10,000 Docker Hub images found leaking credentials, auth keys*. [https://www.bleepingcomputer.com/news/security/over-10-000-docker-hub-images-found-leaking-credentials-auth-keys](https://www.bleepingcomputer.com/news/security/over-10-000-docker-hub-images-found-leaking-credentials-auth-keys)
+Page, C. (2025, 11 december). *10K Docker images spray live cloud creds across the internet*. The Register. https://www.theregister.com/2025/12/11/docker_hub_secrets_leak/

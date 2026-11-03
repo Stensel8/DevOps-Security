@@ -1,240 +1,172 @@
-# Week 3
+# Week 3: Veilige images en testen in de pipeline
+
+In deze week staan de beveiliging van het container-image en het testen in de pipeline centraal. Een container-image bestaat uit veel meer dan de eigen code: een besturingssysteem, libraries en packages van anderen. Een SBOM (software bill of materials) is een lijst van al die onderdelen, in een vast formaat zoals CycloneDX [(CycloneDX, z.d.)](https://cyclonedx.org/) of SPDX [(The Linux Foundation, z.d.)](https://spdx.dev/). Een scanner zoals Docker Scout [(Docker, z.d.-a)](https://docs.docker.com/scout/) of Trivy [(Aqua Security, z.d.)](https://trivy.dev) vergelijkt die onderdelen met databases van bekende kwetsbaarheden.
+
+Hoe minder er in een image zit, hoe minder er kwetsbaar kan zijn. Met een multi-stage build wordt de applicatie in een tussenstap gebouwd, en gaat alleen het resultaat mee naar het image dat echt draait [(Docker, z.d.-b)](https://docs.docker.com/build/building/multi-stage/). De tools die nodig zijn om te bouwen, komen zo niet in productie terecht.
+
+Deze week bestaat uit zeven opdrachten. Paragraaf 3.1 gaat over het maken van een SBOM, en paragraaf 3.2 over het kwetsbaarheidsvrij maken van het image met Docker Scout. Paragraaf 3.3 beschrijft Docker Scout in de pipeline. Paragraaf 3.4 tot en met 3.6 gaan over testen: welke soorten tests er zijn, en Postman-tests in de pipeline. Paragraaf 3.7 bevat een advies over veilige images en een teststrategie. Aan het eind staan twee extra's: de overstap van Poetry naar uv, en CodeRabbit.
 
 ## 3.1 SBOM
 
-Een SBOM (Software Bill of Materials) is een lijst van alle onderdelen in een image. Per onderdeel staat erin wat het is, welke versie, welk type (bijvoorbeeld `apk` of `pypi`), de licentie en een vaste naam (`purl`). Dat staat in een standaardformaat zoals CycloneDX of SPDX, zodat een scanner het kan lezen. Een scanner vergelijkt die lijst met databases van bekende kwetsbaarheden. Komt er een nieuwe CVE bij, dan zie je met de SBOM meteen welke images het package bevatten.
+Voor deze opdracht heb ik Trivy gebruikt. Trivy is een open-source scanner van Aqua Security, die images en configuratiebestanden controleert op kwetsbaarheden en ook een SBOM kan maken. In een SBOM staat per onderdeel wat het is, welke versie, welk type (bijvoorbeeld `apk` of `pypi`), de licentie en een vaste naam (`purl`). Wordt er een nieuwe kwetsbaarheid bekend, dan is met de SBOM direct te zien welke images het betreffende onderdeel bevatten.
 
-Ik heb met Trivy een SBOM in CycloneDX gemaakt van het image zoals het was (commit `790a9b8^`, Debian met Poetry) en van het huidige image:
+Ik heb een SBOM in het formaat CycloneDX gemaakt van het oude image, op basis van Debian en met Poetry erin, en van het huidige image:
 
 ```
-$ trivy image --format cyclonedx --output sbom.cdx.json <image>
-
-# oud (Debian, Poetry in het image)
-library-componenten: 272  (deb: 126, pypi: 146)
-# nu (Alpine, alleen de runtime)
-library-componenten: 38   (apk: 30, pypi: 8)
+oud (Debian, Poetry in het image):  272 onderdelen  (deb: 126, pypi: 146)
+nu  (Alpine, alleen de runtime):     38 onderdelen  (apk: 30, pypi: 8)
 ```
 
-Door de andere basisimage en de multi-stage build (zie 3.2) zitten er nog 38 onderdelen in plaats van 272. Van Python zijn het alleen nog de 8 packages die de app nodig heeft: Flask, Werkzeug, Jinja2, MarkupSafe, itsdangerous, click, blinker en gunicorn. De hele SBOM staat in [sbom/devops-security.cdx.json](sbom/devops-security.cdx.json). Zo ziet één onderdeel eruit:
+Door een andere basisimage en de multi-stage build (zie 3.2) zitten er nog 38 onderdelen in plaats van 272. Van Python zijn alleen de acht packages over die de app echt nodig heeft, zoals Flask en gunicorn. De volledige SBOM staat in [sbom/devops-security.cdx.json](sbom/devops-security.cdx.json).
 
-```json
-{
-  "name": "Flask",
-  "version": "3.1.3",
-  "purl": "pkg:pypi/flask@3.1.3",
-  "licenses": [{ "license": { "id": "BSD-3-Clause" } }]
-}
-```
-
-In de pipeline staat nu ook `sbom: true` bij de build-stap. Dan maakt Docker bij elke build een SBOM en zet die als attestation bij het image op Docker Hub.
+In de pipeline staat nu ook `sbom: true` bij de build-stap. Docker maakt dan bij elke build een SBOM en zet die als attestation bij het image op Docker Hub [(Docker, z.d.-c)](https://docs.docker.com/build/metadata/attestations/sbom/).
 
 ## 3.2 Docker Scout
 
-Het image in de beginstaat is kwetsbaar. Docker Scout laat 96 kwetsbaarheden zien, waarvan 3 Critical en 21 High. Het meeste zit in de basisimage (`python:3-slim-bookworm`: 3 Critical, 15 High). Mijn eigen lagen hebben ook 9 High, door `apt-get install pipx`.
+Docker Scout is de scanner van Docker zelf, die op Docker Hub per image laat zien welke kwetsbaarheden erin zitten. Het image in de beginstaat was kwetsbaar: Docker Scout vond 96 kwetsbaarheden, waarvan 3 critical en 21 high. Het meeste zat in de basisimage `python:3-slim-bookworm`.
 
-<img src="images/github-actions-build.png" alt="Build van het image in de beginstaat" width="720">
+![Docker Scout voor de fix: 96 kwetsbaarheden](images/docker-scout-voor.png)
 
-<img src="images/docker-scout.png" alt="Docker Scout op Docker Hub" width="720">
+### De kwetsbaarheden oplossen
 
-<img src="images/docker-scout-voor.png" alt="Docker Scout voor de fix" width="720">
+Ik heb de [Dockerfile](../Dockerfile) op drie punten aangepast:
 
-### Alle kwetsbaarheden fixen
+- **Een kleinere basisimage:** `python:3.14-alpine` in plaats van Debian.
+- **Niet als root:** het image draait als gebruiker 10001.
+- **Een multi-stage build:** een builder waarin de dependencies worden geïnstalleerd, en een runtime met alleen de app en de virtuele omgeving van Python. Alleen de runtime gaat naar Docker Hub, waardoor de package manager en pip niet in het image zitten dat draait.
 
-Ik heb de Dockerfile aangepast (commit [`790a9b8`](https://github.com/Stensel8/DevOps-Security/commit/790a9b8)):
+![De build in twee stappen: de builder installeert de dependencies, alleen de virtuele omgeving gaat mee naar de runtime, en alleen de runtime gaat naar Docker Hub](images/docker-build-stages.svg)
 
-- `python:3.14-alpine` als basis in plaats van Debian.
-- Het image draait als gebruiker 10001, niet als root.
-- Twee stappen (multi-stage): een **builder** waarin Poetry de dependencies installeert en een **runtime** met alleen de app en de venv. Alleen de runtime gaat naar Docker Hub (`target: runtime`). Poetry en pip zitten dus niet in het image dat draait.
-
-```mermaid
-flowchart LR
-    A["python:3.14-alpine"] --> B["<b>builder</b> (tussenimage)<br/>Poetry + pip<br/>installeert de dependencies<br/>203 MB, wordt niet gepusht"]
-    A --> C["<b>runtime</b> (applicatie-image)<br/>de app + de venv<br/>geen Poetry, geen pip, niet als root<br/>84,5 MB"]
-    B -- "alleen de venv (/app/.venv)" --> C
-    C --> D[("Docker Hub<br/>stensel8/devops-security")]
-```
-
-De twee `FROM`-regels in de [Dockerfile](../Dockerfile) zijn bewust: elke `FROM` begint een nieuw, schoon image. `COPY --from=builder` haalt alleen `/app/.venv` uit de builder. Pip haal ik uit de runtime, want de app heeft het niet nodig en scanners melden de gebundelde onderdelen (msgpack, setuptools). De builder draait als root, maar die stage komt niet in het image dat draait.
+Elke `FROM` begint een nieuw, schoon image, en `COPY --from=builder` haalt alleen de virtuele omgeving uit de builder. De kern van de Dockerfile ziet er zo uit:
 
 ```dockerfile
 FROM python:3.14-alpine@sha256:9e9f... AS builder
-COPY app/pyproject.toml app/poetry.lock ./
-RUN poetry install --no-root --only main --no-interaction --no-ansi
+RUN uv sync --locked --no-install-project
 
 FROM python:3.14-alpine@sha256:9e9f... AS runtime
-RUN PIP_ROOT_USER_ACTION=ignore pip uninstall -y pip
-COPY --chown=10001:10001 app/ /app/
 COPY --from=builder --chown=10001:10001 /app/.venv /app/.venv
 USER 10001:10001
 ```
 
-Ik heb Alpine gekozen. Trivy telt op de Debian-basisimage 252 kwetsbaarheden en op Alpine 3 (die komen uit pip en verdwijnen in de runtime). Trivy telt anders dan Docker Scout, want scanners gebruiken andere databases.
+Ik heb voor Alpine gekozen omdat daar veel minder in zit. Trivy vond op de Debian-basisimage 252 kwetsbaarheden en op Alpine 3. Die drie zitten in pip, dat ik in de runtime weghaal. Trivy telt overigens anders dan Docker Scout, omdat de scanners verschillende databases gebruiken. In de runtime vindt Trivy geen kwetsbaarheden meer.
 
-```
-$ trivy image --scanners vuln python:3.14-slim-bookworm
-Total: 252 (UNKNOWN: 2, LOW: 86, MEDIUM: 104, HIGH: 55, CRITICAL: 5)
+Docker Scout vindt na de fix 0 kwetsbaarheden, in 47 packages. Voor de fix waren het er 127.
 
-$ trivy image --scanners vuln python:3.14-alpine
-Total: 3 (UNKNOWN: 0, LOW: 0, MEDIUM: 1, HIGH: 2, CRITICAL: 0)      # uit pip
-```
+![Docker Scout na de fix: 0 kwetsbaarheden](images/docker-scout-na.png)
 
-Trivy op mijn twee stages, lokaal gebouwd met `docker build --target builder` en `--target runtime` (getagd als `proof-builder` en `proof-runtime`):
+Het image is ook veel kleiner geworden. Gecomprimeerd ging het van 118,93 MB naar 17 MB, zoals Docker Hub het toont, en uitgepakt van ongeveer 437 MB naar 84,5 MB.
 
-```
-$ docker images --format '{{.Repository}} {{.Size}}' | grep proof
-proof-runtime 84.5MB
-proof-builder 203MB
+Bij een latere build vond Docker Scout toch weer een kwetsbaarheid: CVE-2026-107891 in `musl` van Alpine, nog zonder ernst omdat hij te nieuw was voor een CVSS-score. Daarom blijven deze scans in de pipeline draaien en worden ze niet één keer uitgevoerd. Een image dat vandaag schoon is, kan morgen een nieuwe kwetsbaarheid hebben, zonder dat er iets aan de Dockerfile is veranderd.
 
-$ trivy image --severity HIGH,CRITICAL --scanners vuln proof-builder
-Python (python-pkg)
-Total: 2 (HIGH: 2, CRITICAL: 0)
-│ msgpack    │ GHSA-6v7p-g79w-8964 │ HIGH │ fixed │ 1.1.2  │ 1.2.1  │
-│ setuptools │ CVE-2025-47273      │ HIGH │ fixed │ 70.3.0 │ 78.1.1 │
+![Docker Scout vindt een nieuwe CVE in musl, nog zonder ernst](images/docker-scout-musl-cve.png)
 
-$ trivy image --severity HIGH,CRITICAL --scanners vuln proof-runtime
-proof-runtime (alpine 3.24.2)   alpine       0
-blinker, click, flask, gunicorn, itsdangerous, jinja2, markupsafe, werkzeug   python-pkg   0
-```
+### Extra: een veiligere app
 
-Docker Scout laat na de fix 0 kwetsbaarheden zien (het waren er 3 Critical, 21 High, 18 Medium en 48 Low) en 47 packages (het waren er 127).
+Buiten de opdracht heb ik nog een paar dingen aan de app verbeterd:
 
-<img src="images/docker-scout-na.png" alt="Docker Scout na de fix" width="720">
+- **Gunicorn in plaats van de ontwikkelserver:** de app draaide eerst met `flask run`. Dat is de ontwikkelserver van Flask, die niet bedoeld is voor productie [(Pallets, z.d.)](https://flask.palletsprojects.com/en/stable/deploying/).
+- **Jinja-templates:** de pagina's staan nu in templates die invoer vanzelf escapen.
+- **Security headers:** elk antwoord krijgt headers mee, zoals `Content-Security-Policy`, `X-Frame-Options` en `Referrer-Policy` [(OWASP Foundation, z.d.)](https://cheatsheetseries.owasp.org/cheatsheets/HTTP_Headers_Cheat_Sheet.html). De Content-Security-Policy staat alleen scripts, CSS en afbeeldingen van de app zelf toe.
 
-Het image is ook kleiner. Gecomprimeerd ging het van 118,93 MB naar 17 MB (zoals Docker Hub het toont), uitgepakt van ongeveer 437 MB naar 84,5 MB (lokaal gemeten, met gunicorn erbij).
+Met [securityheaders.com](https://securityheaders.com) heb ik de headers gecontroleerd. Met alleen de eerste drie headers kreeg de app een D, met de rest erbij een A.
 
-Vannacht, bij de laatste build, stond er voor het eerst toch weer iets: CVE-2026-107891 in `apk/alpine/musl`, severity N/A (te nieuw om al een CVSS-score te hebben). Precies waarom dit soort scans in de pipeline blijven draaien in plaats van één keer uitgevoerd te worden: een image dat vandaag schoon is, kan morgen een nieuwe CVE in een onderliggend package hebben, zonder dat ik zelf iets aan de Dockerfile veranderd heb.
+![securityheaders.com geeft de app een A](images/securityheaders-na.png)
 
-<img src="images/docker-scout-musl-cve.png" alt="Docker Scout: nieuwe CVE-2026-107891 in musl, nog zonder severity" width="720">
-
-### Extra in de app
-
-Buiten de opdracht heb ik nog drie kleine dingen aangepast. De app draait onder gunicorn in plaats van `flask run`, want dat is de ontwikkelserver ([`830426d`](https://github.com/Stensel8/DevOps-Security/commit/830426d)). Vanwege het read-only bestandssysteem staat er `--worker-tmp-dir /dev/shm` en `--no-control-socket` bij. De pagina's staan in Jinja-templates die vanzelf escapen ([`071ad02`](https://github.com/Stensel8/DevOps-Security/commit/071ad02)). Elk antwoord krijgt `X-Content-Type-Options`, `X-Frame-Options` en `Referrer-Policy` ([`8e01026`](https://github.com/Stensel8/DevOps-Security/commit/8e01026)). Daarna heb ik de app gescand met [securityheaders.com](https://securityheaders.com), de headerscanner van Snyk. Toen stonden de drie headers van hierboven er al in, en dat gaf een D, want `Content-Security-Policy` en `Permissions-Policy` ontbraken. Die heb ik toegevoegd, samen met `Cross-Origin-Opener-Policy` en `Cross-Origin-Resource-Policy` ([`e3fca00`](https://github.com/Stensel8/DevOps-Security/commit/e3fca00)). De CSP staat alleen scripts, CSS en plaatjes van de app zelf toe. Daarna gaf de scan een A. Hoger kan niet zolang de app op HTTP draait. Dat komt in week 5 met de Ingress en een certificaat.
-
-<img src="images/securityheaders-na.png" alt="securityheaders.com: A" width="720">
-
-<img src="images/securityheaders-headers.png" alt="securityheaders.com: alle headers die de app stuurt" width="720">
-
-De achtergrondfoto's kwamen van `cdn.glitch.com`, maar dat domein bestaat niet meer. Ik heb ze teruggezocht op Unsplash en host ze nu zelf in `static/img/` ([`28dcc30`](https://github.com/Stensel8/DevOps-Security/commit/28dcc30)), dus de CSP hoeft geen ander domein toe te staan.
-
-De screenshot van Docker Scout hierboven is van vóór gunicorn. Trivy geeft op het huidige image 0 kwetsbaarheden.
+De achtergrondfoto's kwamen van `cdn.glitch.com`, maar dat domein bestaat niet meer. Ik heb ze teruggezocht op Unsplash en host ze nu zelf, zodat de Content-Security-Policy geen ander domein hoeft toe te staan.
 
 ## 3.3 Docker Scout in de pipeline
 
-In [build.yaml](../.github/workflows/build.yaml) staat een `scan`-job die het zojuist gepushte image met Docker Scout controleert op Critical en High kwetsbaarheden (`only-severities: critical,high`, `exit-code: true`). Deploy wacht op zowel Test als Scan (`needs: [ test, scan ]`), dus een kwetsbaar image komt niet op het cluster.
+In [build.yaml](../.github/workflows/build.yaml) staat een job `scan`, die het net gebouwde image met Docker Scout controleert op critical- en high-kwetsbaarheden. Vindt Docker Scout er een, dan faalt de job. De job `deploy` wacht op Test en Scan, waardoor een kwetsbaar image niet op het cluster komt.
 
-Om te laten zien dat die gate ook echt afdwingt, heb ik tijdelijk een paar dependencies teruggedraaid naar kwetsbare versies (commit [`374d9d8`](https://github.com/Stensel8/DevOps-Security/commit/374d9d8)): Flask 3.0.3, Werkzeug 3.0.3, Jinja2 3.1.4 en Gunicorn 21.2.0. Gunicorn 21.2.0 heeft twee High CVE's voor HTTP request smuggling (CVE-2024-1135 en CVE-2024-6827, CVSS 8.2 en 7.5). Scan faalde daardoor en Deploy liep niet.
+Om te laten zien dat die controle werkt, heb ik tijdelijk een paar dependencies teruggezet naar kwetsbare versies, waaronder gunicorn 21.2.0. Die versie heeft twee high-kwetsbaarheden voor HTTP request smuggling, CVE-2024-1135 en CVE-2024-6827. De scan faalde, en Deploy liep niet.
 
-<img src="images/scout-pipeline-rood.png" alt="Scan-job faalt: 2 High kwetsbaarheden in gunicorn 21.2.0" width="720">
+![De scan-job faalt op twee high-kwetsbaarheden in gunicorn 21.2.0](images/scout-pipeline-rood.png)
 
-Renovate maakte voor elke kwetsbaarheid een losse pull request met het label `security`: flask (commit `5b1f0ab`, #35), gunicorn (commit `30dd48a`, #37) en jinja2 (commit `a32eb65`, #34). Na het mergen is Scan weer groen (0 kwetsbaarheden, 48 packages) en loopt Deploy door.
+Renovate maakte voor elke kwetsbaarheid een aparte pull request met het label `security`. Na het mergen was de scan weer groen en liep Deploy door.
 
-<img src="images/scout-pipeline-groen.png" alt="Scan-job slaagt: 0 kwetsbaarheden" width="720">
-
-## Extra: van Poetry naar uv
-
-Tijdens de les hadden we met z'n allen last van Python 3.12 versus 3.13 die niet lekker samenwerkten; school heeft toen de boel teruggezet naar 3.10 als workaround. Dat lost het onderliggende probleem niet op: de volgende keer dat iemand een andere Python-versie of een foute dependency-combinatie binnenhaalt, gebeurt hetzelfde weer. [uv](https://docs.astral.sh/uv/) van Astral pakt dat anders aan: het pint de exacte Python-versie en elke dependency in een lockfile (`uv.lock`), en `uv sync`/`uv run` zorgen er zelf voor dat de omgeving daarmee overeenkomt voordat er iets draait. Geen losse installatiestap meer die stil kan falen of een verkeerde versie kan pakken.
-
-Ik heb Poetry overal vervangen door uv: `app/pyproject.toml` (alleen het `[build-system]`-blok weg, uv heeft dat niet nodig), `app/uv.lock` in plaats van `app/poetry.lock`, het Dockerfile en de `Validate`-job in de pipeline. uv zelf komt niet van pip, maar als los, gepind binary: in het Dockerfile uit het officiële `ghcr.io/astral-sh/uv`-image (op SHA gepind, zelfde patroon als de Python-basisimage), in de pipeline als gepinde release-tarball met een checksum erbij. Dependabot houdt `app/uv.lock` nu bij via het officiële `uv`-ecosystem in plaats van `pip`.
-
-Lokaal getest, inclusief de unit tests:
-
-```
-$ cd app && uv sync --locked
-Resolved 9 packages in 4ms
-Installed 8 packages in 15ms
-
-$ uv run python -m unittest discover -s ../tests -v
-test_encoded_controls_cannot_forge_records ... ok
-test_literal_escape_is_distinct_from_newline ... ok
-test_ordinary_requests_and_secrets ... ok
-Ran 3 tests in 0.441s
-OK
-```
-
-En het image gewoon lokaal gebouwd en gedraaid om te checken dat de uv-versie van het Dockerfile hetzelfde doet als de Poetry-versie:
-
-```
-$ docker build --target runtime -t devops-security-uv-test .
-Successfully built ...
-$ docker run -d -p 8098:5000 devops-security-uv-test
-$ curl -s -o /dev/null -w 'HTTP %{http_code}\n' http://localhost:8098/
-HTTP 200
-```
-
-In de [screencast bij deze week](video/rollout-en-debug.webm) is ook te zien hoe dit misgaat zonder uv: ik probeer daar de Python-versie van 3.14 terug te zetten naar 3.8, en de app gaat meteen stuk. Precies het soort fout dat uv voorkomt doordat het de hele keten (interpreter + dependencies) samen vastlegt in plaats van los van elkaar.
+![De scan-job slaagt weer: 0 kwetsbaarheden](images/scout-pipeline-groen.png)
 
 ## 3.4 Testsoorten in de testfase
 
-In de pipeline draaien nu drie soorten tests, elk op een ander niveau. De `validate`-job draait de unit tests (`tests/test_access_log.py`), die testen één functie geïsoleerd, met een tijdelijke map en een gemockte `os.path.isdir`. Die lopen op elke commit, zijn snel en hebben niks gebouwd of gedeployed nodig. De `test`-job doet een smoke test: start het net gebouwde image en wacht tot het antwoordt op HTTP. Dat test niet de logica, alleen of het image uberhaupt opstart. Een kapotte dependency of een verkeerd entrypoint vangt dit, een logicafout niet. En de `scan`-job is eigenlijk geen functionele test maar een gate in de testfase: die scant het image tegen een kwetsbaarhedendatabase in plaats van tegen mijn eigen testcode.
+In de pipeline draaien drie soorten controles, elk op een ander niveau:
 
-Wat er nog ontbreekt is een echte integratietest die een scenario doorloopt zoals inloggen, een quote plaatsen en die terugzien (3.5/3.6 pakken dat met Postman), en een DAST-scan tegen de draaiende app (bijvoorbeeld OWASP ZAP), die van buitenaf test in plaats van de code te lezen. Ik zou dat na Deploy laten lopen, tegen de net uitgerolde omgeving, zodat het ook misconfiguraties in Kubernetes zelf raakt en niet alleen de applicatiecode.
+- **Unit tests:** in de job `validate`. Die testen één functie los van de rest. Ze draaien bij elke commit, zijn snel, en er hoeft niets voor gebouwd of uitgerold te worden.
+- **Een smoke test:** in de job `test`. Die start het net gebouwde image en wacht tot het antwoordt op HTTP. Dat test niet de logica, alleen of het image opstart. Een kapotte dependency of een verkeerd startcommando komt zo aan het licht, een fout in de logica niet.
+- **Een image-scan:** in de job `scan`. Dat is eigenlijk geen functionele test, maar een controle in de testfase: het image wordt vergeleken met een database van kwetsbaarheden.
+
+Wat nog ontbreekt, is een integratietest die een volledig scenario doorloopt, zoals inloggen, een quote plaatsen en die terugzien. In 3.5 en 3.6 begin ik daarmee met Postman. Daarnaast ontbreekt een DAST-scan tegen de draaiende app, bijvoorbeeld met ZAP [(ZAP, z.d.)](https://www.zaproxy.org/). Die zou ik na Deploy laten lopen, tegen de net uitgerolde omgeving, zodat ook fouten in de configuratie van Kubernetes naar boven komen.
+
+## 3.5 en 3.6 Postman-tests in de pipeline
+
+Postman is een programma om API's en webapplicaties te testen. Tests worden gebundeld in een collectie, die ook buiten Postman kan draaien. Mijn collectie staat in [tests/postman/quoter-xp.postman_collection.json](../tests/postman/quoter-xp.postman_collection.json) en bevat twee verzoeken:
+
+- **De verplichte test uit 3.5:** de homepage geeft HTTP 200, en de tekst "Quoter XP" staat erop.
+- **De eigen test uit 3.6:** de security headers staan erop, en de app draait op gunicorn en niet op de ontwikkelserver van Flask.
+
+In de job `test` start ik de container van het net gebouwde image, en laat ik de collectie lopen met Newman, de command-line runner van Postman [(Postman, z.d.)](https://learning.postman.com/docs/collections/using-newman-cli/command-line-integration-with-newman/). Alle zes de controles slagen, zowel lokaal als in de pipeline:
+
+![De Postman-tests in de pipeline: alle 6 controles geslaagd](images/postman-pipeline-groen.png)
+
+## 3.7 Advies: veilige images en teststrategie
+
+Voor SolidApps adviseer ik dezelfde opbouw als in deze pipeline, als vast proces bij elke build:
+
+1. **Bouw klein en zonder root.** Gebruik een kleine, recente basisimage zoals Alpine, en een multi-stage build, zodat buildtools niet in het image komen dat draait.
+2. **Maak bij elke build een SBOM**, zodat bij een nieuwe kwetsbaarheid direct duidelijk is welke images die bevatten.
+3. **Scan het image vóór het uitrollen**, met een harde grens op critical en high. Een kwetsbaar image wordt niet uitgerold, ook niet tijdelijk.
+4. **Test op meerdere niveaus:** unit tests en een smoke test bij elke build, Postman-tests tegen de draaiende container, en een DAST-scan tegen de net uitgerolde omgeving.
+5. **Scan code en dependencies bij elke pull request**, met Snyk, CodeQL of Trivy, zodat een kwetsbaarheid opvalt voordat hij in `main` staat.
+
+Omdat SolidApps met meerdere programmeertalen werkt, is het belangrijk dat deze stappen niet afhangen van de taal. Dan hoeven ze niet per project opnieuw te worden ingericht.
+
+## Extra: van Poetry naar uv
+
+In de les liepen we met de hele klas tegen problemen aan doordat Python 3.12 en 3.13 niet goed samenwerkten. School heeft toen alles teruggezet naar 3.10. Dat lost het onderliggende probleem niet op: bij een andere versie of een verkeerde combinatie van dependencies gebeurt het opnieuw.
+
+Daarom heb ik Poetry vervangen door uv van Astral. uv legt alle dependencies vast in één lockfile, `uv.lock` [(Astral, z.d.)](https://docs.astral.sh/uv/). Met `uv sync --locked` faalt de build zodra die lockfile niet meer past bij `pyproject.toml`, zodat er nooit ongemerkt andere versies worden geïnstalleerd. uv zelf staat in de Dockerfile en de pipeline ook vast op een vaste versie, en Dependabot houdt `uv.lock` bij. Na de overstap heb ik de unit tests lokaal gedraaid; ze slaagden alle drie.
+
+In de [screencast bij deze week](video/rollout-en-debug.webm) is te zien wat er gebeurt als de Python-versie verandert: ik zet die terug van 3.14 naar 3.8, en de app gaat meteen stuk.
 
 ## Extra: CodeRabbit
 
-Naast Snyk, CodeQL en Trivy heb ik CodeRabbit aan de repository gekoppeld (issue [#39](https://github.com/Stensel8/DevOps-Security/issues/39)), een AI-codereview bovenop de bestaande scanners. Ik heb de 14 dagen gratis trial gebruikt; CodeRabbit is daarna een betaald product en ik heb het abonnement niet aangehouden. De instellingen staan wel vast in [`.coderabbit.yaml`](../.coderabbit.yaml), voor het geval ik het later weer aanzet.
+Naast Snyk, CodeQL en Trivy heb ik CodeRabbit aan de repository gekoppeld. CodeRabbit is een tool die met AI pull requests en code beoordeelt, als extra laag naast de securityscanners [(CodeRabbit, 2026)](https://www.coderabbit.ai/). Ik heb de gratis proefperiode van veertien dagen gebruikt en het abonnement daarna niet verlengd. De instellingen staan nog in [`.coderabbit.yaml`](../.coderabbit.yaml).
 
-Het meest interessante wat CodeRabbit deed, deed het volledig uit zichzelf: de "coding agent"-functie scande de repository, vond dat `request.path` ongefilterd in het logbestand terechtkwam (dezelfde soort kwetsbaarheid als bij de wachtwoorden-in-het-logbestand uit week 2, maar dan log-injectie: een pad met een newline erin zou een nep-logregel kunnen forceren), en opende zelf [PR #41](https://github.com/Stensel8/DevOps-Security/pull/41) met een fix én regressietests. Ik heb er niet om gevraagd en ook geen review aangevraagd; CodeRabbit deed dit proactief en autonoom, met zijn eigen GitHub-account als auteur.
+Het interessantste deed CodeRabbit uit zichzelf. Het zag dat het pad van een verzoek ongefilterd in het logbestand terechtkwam. Met een regeleinde in het pad kan zo een nep-logregel worden toegevoegd; dit heet log-injectie. CodeRabbit opende zelf een pull request met een fix en tests, zonder dat ik erom had gevraagd.
 
-<img src="images/coderabbit-autonome-fix-pr41.png" alt="CodeRabbit opent zelf PR #41 met een fix en regressietests" width="720">
+![CodeRabbit opent zelf een pull request met een fix en tests](images/coderabbit-autonome-fix-pr41.png)
 
-Ik heb de PR beoordeeld en gemerged (commit [`e7bc5f0`](https://github.com/Stensel8/DevOps-Security/commit/e7bc5f0)):
+Ik heb de pull request beoordeeld en gemerged. Het pad wordt nu gecodeerd voordat het in het log komt:
 
 ```diff
-@@ app/app.py:36-38 @@
- def log_request():
 -    log_file.write(f"{request.method} {request.path}\n")
-+    # URL-encoding voorkomt dat control-tekens in het pad extra logregels maken.
 +    log_path = urllib.parse.quote(request.path, safe="/")
 +    log_file.write(f"{request.method} {log_path}\n")
 ```
 
-Plus 68 regels nieuwe tests in `tests/test_access_log.py`, die onder andere controleren dat control-tekens geen nieuwe logregel kunnen forceren en dat een gewoon verzoek er nog normaal uitziet. Die tests draaien sindsdien gewoon mee in de `validate`-job van de pipeline.
+De tests hiervoor controleren dat speciale tekens geen nieuwe logregel kunnen maken, en draaien sindsdien mee in de job `validate`.
 
-## 3.5 en 3.6 Postman-tests in de pipeline
+## Bronnen
 
-De collectie staat in [tests/postman/quoter-xp.postman_collection.json](../tests/postman/quoter-xp.postman_collection.json), met twee requests. De eerste is de verplichte test uit 3.5: de homepage geeft HTTP 200 en de tekst "Quoter XP" staat in de body. De tweede (3.6) test iets dat een scanner niet checkt: staan de security-headers uit week 3 er nog op, en draait de app echt op gunicorn in plaats van de Flask-ontwikkelserver (`flask run`), die niet voor productie bedoeld is en geen van die headers vanzelf zou zetten.
+Aqua Security. (z.d.). *Trivy*. https://trivy.dev
 
-In de `Test`-job van [build.yaml](../.github/workflows/build.yaml) start ik eerst de container van het net gebouwde image (zoals de bestaande smoke test al deed), en laat die nu ook staan voor Newman, de command-line runner van Postman. GitHub-runners hebben Node.js al staan, dus `npx newman` hoeft niets extra's te installeren:
+Astral. (z.d.). *uv*. https://docs.astral.sh/uv/
 
-```yaml
-- name: Run the Postman tests
-  run: npx --yes newman run tests/postman/quoter-xp.postman_collection.json --env-var baseUrl=http://localhost
-```
+CodeRabbit. (2026). *CodeRabbit* \[AI-tool voor codereview\]. https://www.coderabbit.ai/
 
-Lokaal getest tegen hetzelfde image (gebouwd uit de huidige Dockerfile, gedraaid met Newman via Docker):
+CycloneDX. (z.d.). *CycloneDX Bill of Materials Standard*. https://cyclonedx.org/
 
-```
-$ docker run -d --name quoterxp-test -p 8099:5000 devops-security-test:local
-$ docker run --rm --network host -v "$PWD/tests/postman:/etc/newman" postman/newman:alpine \
-    run quoter-xp.postman_collection.json --env-var baseUrl=http://localhost:8099
+Docker. (z.d.-a). *Docker Scout*. Docker Docs. https://docs.docker.com/scout/
 
-→ Homepage antwoordt met 200 en Quoter XP
-  GET http://localhost:8099/ [200 OK, 3.54kB, 32ms]
-  ✓  status is 200
-  ✓  body bevat Quoter XP
+Docker. (z.d.-b). *Multi-stage builds*. Docker Docs. https://docs.docker.com/build/building/multi-stage/
 
-→ Security headers staan erop
-  GET http://localhost:8099/ [200 OK, 3.54kB, 6ms]
-  ✓  X-Content-Type-Options is nosniff
-  ✓  X-Frame-Options is DENY
-  ✓  Content-Security-Policy staat erop
-  ✓  draait op gunicorn, niet op de Flask-ontwikkelserver
+Docker. (z.d.-c). *SBOM attestations*. Docker Docs. https://docs.docker.com/build/metadata/attestations/sbom/
 
-  assertions: 6, failed: 0
-```
+OWASP Foundation. (z.d.). *HTTP headers cheat sheet*. OWASP Cheat Sheet Series. https://cheatsheetseries.owasp.org/cheatsheets/HTTP_Headers_Cheat_Sheet.html
 
-En bevestigd in de echte `Test`-job van de pipeline, tegen het net gebouwde image op de GitHub-runner:
+Pallets. (z.d.). *Deploying to production*. Flask Documentation. https://flask.palletsprojects.com/en/stable/deploying/
 
-<img src="images/postman-pipeline-groen.png" alt="Run the Postman tests in de pipeline: alle 6 assertions geslaagd" width="720">
+Postman. (z.d.). *Newman CLI overview*. Postman Docs. https://learning.postman.com/docs/collections/using-newman-cli/command-line-integration-with-newman/
 
-## 3.7 Advies: veilige images en teststrategie
+The Linux Foundation. (z.d.). *SPDX*. https://spdx.dev/
 
-Voor SolidApps zou ik dezelfde opbouw aanhouden die nu in deze pipeline staat, als vast proces per build:
-
-1. Build met een minimale, recente basisimage (Alpine i.p.v. een volledige distro), multi-stage zodat buildtools (Poetry, pip, compilers) niet in het image komen dat draait, en nooit als root.
-2. SBOM genereren bij elke build (Docker's `sbom: true` of een losse Trivy/Syft-stap), zodat bij een nieuwe CVE meteen duidelijk is welke images die bevatten.
-3. Image-scan vóór de deploy, met een harde gate op Critical/High (Docker Scout of Trivy). Geen uitzonderingen: een kwetsbaar image mag niet uitgerold worden, ook niet "tijdelijk".
-4. Unit tests en een smoke test op elke build, Postman/Newman-tests tegen de draaiende container voor het functionele en security-gedrag (headers, verwachte content), en een DAST-scan (bijvoorbeeld OWASP ZAP) tegen de net uitgerolde omgeving.
-5. SAST en dependency-scanning (Snyk, CodeQL, Trivy) op elke pull request, zodat een kwetsbaarheid niet eerst naar `main` hoeft voor hij opvalt. CodeRabbit erbij voor codekwaliteit, als extra laag naast de securityscanners.
-
-Tooling-advies: Docker Scout of Trivy voor images, Snyk of CodeQL voor code, Postman/Newman voor functionele en security-checks in de pipeline, en OWASP ZAP voor DAST. Voor SolidApps, die met meerdere talen werkt (JavaScript, C#), is het vooral belangrijk dat deze stappen taal-onafhankelijk in de pipeline staan en niet per project opnieuw ingericht hoeven te worden.
+ZAP. (z.d.). *ZAP*. https://www.zaproxy.org/
