@@ -7,7 +7,7 @@
 # is de bron jouw repo, met --from=builder is de bron de builder-stage.
 
 # ---------- Stap 1 van 2: builder (tussenimage, wordt niet gepusht) ----------
-FROM python:3.15-alpine@sha256:20a82dbc2783112ddb91d1534603f802d222a3e63e593cd002eb2ac534e70211 AS builder
+FROM python:3.15-alpine@sha256:a0f2e268f2ce8f3709611a90054ec6a8ae31f6251f5896b8648b9bb99835e30a AS builder
 
 # uv zelf komt niet van pip of apt, maar als los, gepinned binary uit het officiële uv-image.
 COPY --from=ghcr.io/astral-sh/uv@sha256:32a7bb39b496babbd997b0a39a4d66c126bdaf5661b302bf6f06abda8deca6ff /uv /usr/local/bin/uv
@@ -26,7 +26,7 @@ COPY app/pyproject.toml app/uv.lock ./
 RUN uv sync --locked --no-install-project
 
 # ---------- Stap 2 van 2: runtime (het applicatie-image dat wordt gepusht) ----------
-FROM python:3.15-alpine@sha256:20a82dbc2783112ddb91d1534603f802d222a3e63e593cd002eb2ac534e70211 AS runtime
+FROM python:3.15-alpine@sha256:a0f2e268f2ce8f3709611a90054ec6a8ae31f6251f5896b8648b9bb99835e30a AS runtime
 
 # Pip weghalen: de app heeft het niet nodig en scanners klagen over oude onderdelen erin
 RUN PIP_ROOT_USER_ACTION=ignore pip uninstall -y pip
